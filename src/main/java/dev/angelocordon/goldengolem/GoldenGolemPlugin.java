@@ -32,6 +32,9 @@ public final class GoldenGolemPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        if (true) {
+            throw new IllegalStateException("LAB-26 deliberate smoke-test failure");
+        }
         saveDefaultConfig();
         GolemConfig config = GolemConfig.from(getConfig());
 
