@@ -177,7 +177,9 @@ cmd_run() {
         && failures+=("log contains 'Error occurred while enabling $PLUGIN_NAME'")
     grep -q "Could not load 'plugins/golden-golem.jar'" "$log" \
         && failures+=("log contains \"Could not load 'plugins/golden-golem.jar'\"")
-    grep -q -E "at $PLUGIN_PACKAGE\." "$log" \
+    # Frames look like "at golden-golem.jar//dev.angelocordon.goldengolem.X.y(...)", so allow a
+    # classloader/module prefix; also catch "Caused by: dev.angelocordon.goldengolem.SomeException".
+    grep -q -E "(at ([^ ]*/)?|Caused by: )$PLUGIN_PACKAGE\." "$log" \
         && failures+=("log contains a stack trace through $PLUGIN_PACKAGE")
     grep -q "Enabling $PLUGIN_NAME" "$log" \
         || failures+=("plugin was never enabled (no 'Enabling $PLUGIN_NAME' line)")
