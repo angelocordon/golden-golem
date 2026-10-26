@@ -1,0 +1,6 @@
+name: GoldenGolem
+version: '${version}'
+main: dev.angelocordon.goldengolem.GoldenGolemPlugin
+api-version: '26.3'
+description: A gold-block golem that mines one block type in an area and brings the drops to its golden chest.
+author: angelocordon

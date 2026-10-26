@@ -1,0 +1,18 @@
+# Golden Golem settings. Restart the server after changing these.
+
+work-area:
+  # Blocks out from the work center, horizontally. Capped at 32.
+  radius: 16
+  # Blocks above and below the work center.
+  vertical-range: 4
+  # How many block positions a golem checks per tick while looking for its target.
+  scan-blocks-per-tick: 256
+
+# The work center must be within this many blocks of the golem's chest.
+max-chest-distance: 64
+
+tool:
+  # Go home to swap tools when durability drops below this percent...
+  low-durability-percent: 5.0
+  # ...or when this many uses are left, whichever comes first.
+  low-durability-uses: 3
