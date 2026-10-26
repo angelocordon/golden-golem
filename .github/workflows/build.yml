@@ -41,3 +41,45 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" build/libs/golden-golem.jar --title "$GITHUB_REF_NAME" --generate-notes
+
+  smoke:
+    # Boots a real Paper server with the built jar. The release step lives in `build` and does
+    # not wait for this job.
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: golden-golem
+          path: artifact
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Resolve latest Paper build
+        id: paper
+        run: scripts/smoke-test.sh resolve
+
+      - name: Cache Paper server jar
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/paper
+          key: paper-26.3-${{ steps.paper.outputs.build }}
+
+      - name: Boot Paper with the plugin
+        run: scripts/smoke-test.sh run artifact/golden-golem.jar
+
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-server-log
+          path: |
+            smoke-server/server.log
+            smoke-server/logs/
+          if-no-files-found: warn
