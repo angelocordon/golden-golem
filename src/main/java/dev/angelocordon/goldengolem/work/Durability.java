@@ -11,8 +11,9 @@ public final class Durability {
 
     /**
      * True if the uses left ({@code maxDamage - damage}) are at or below {@code minUses}, or below
-     * {@code percent} percent of {@code maxDamage}. An item with {@code maxDamage <= 0} has no
-     * durability and is never low.
+     * {@code percent} percent of {@code maxDamage}. A tool with one use left is always low, even
+     * with both thresholds at 0, because that use would break it. An item with
+     * {@code maxDamage <= 0} has no durability and is never low.
      */
     public static boolean isLow(int maxDamage, int damage, double percent, int minUses) {
         return isLow(maxDamage, damage, percent, minUses, false);
@@ -25,6 +26,8 @@ public final class Durability {
             return false;
         }
         long usesLeft = (long) maxDamage - damage;
-        return usesLeft <= minUses || usesLeft < maxDamage * percent / 100.0;
+        // In vanilla a tool breaks when damage reaches maxDamage, so never let it get to its
+        // last use.
+        return usesLeft <= Math.max(1, minUses) || usesLeft < maxDamage * percent / 100.0;
     }
 }

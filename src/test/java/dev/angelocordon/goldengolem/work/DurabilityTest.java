@@ -42,8 +42,9 @@ class DurabilityTest {
     }
 
     @Test
-    void zeroThresholdsOnlyTriggerAtZeroUsesLeft() {
-        assertFalse(Durability.isLow(100, 99, 0.0, 0));
+    void lastUseIsAlwaysLowEvenWithZeroThresholds() {
+        assertFalse(Durability.isLow(100, 98, 0.0, 0));
+        assertTrue(Durability.isLow(100, 99, 0.0, 0));
         assertTrue(Durability.isLow(100, 100, 0.0, 0));
     }
 

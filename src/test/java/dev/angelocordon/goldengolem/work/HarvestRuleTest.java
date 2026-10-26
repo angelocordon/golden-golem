@@ -32,7 +32,16 @@ class HarvestRuleTest {
                 Material.STRIPPED_OAK_LOG, Material.STRIPPED_BIRCH_WOOD,
                 Material.CRIMSON_STEM, Material.WARPED_HYPHAE,
                 Material.STRIPPED_CRIMSON_STEM, Material.STRIPPED_WARPED_HYPHAE,
-                Material.BAMBOO_BLOCK, Material.STRIPPED_BAMBOO_BLOCK);
+                Material.BAMBOO_BLOCK, Material.STRIPPED_BAMBOO_BLOCK, Material.MANGROVE_ROOTS);
+    }
+
+    @Test
+    void pickaxeFitsTerracottaAndAmethystButNotGlazedTerracotta() {
+        assertFits(Material.IRON_PICKAXE,
+                Material.TERRACOTTA, Material.ORANGE_TERRACOTTA, Material.LIGHT_GRAY_TERRACOTTA,
+                Material.AMETHYST_BLOCK);
+        assertDoesNotFit(Material.IRON_PICKAXE,
+                Material.WHITE_GLAZED_TERRACOTTA, Material.LIGHT_BLUE_GLAZED_TERRACOTTA);
     }
 
     @Test
@@ -90,7 +99,8 @@ class HarvestRuleTest {
                 Material.DIRT, Material.COARSE_DIRT, Material.ROOTED_DIRT, Material.GRASS_BLOCK,
                 Material.PODZOL, Material.MYCELIUM, Material.SAND, Material.RED_SAND,
                 Material.GRAVEL, Material.CLAY, Material.MUD, Material.SOUL_SAND,
-                Material.SOUL_SOIL, Material.SNOW_BLOCK);
+                Material.SOUL_SOIL, Material.SNOW, Material.SNOW_BLOCK,
+                Material.MUDDY_MANGROVE_ROOTS);
     }
 
     @Test

@@ -12,14 +12,27 @@ import org.jspecify.annotations.Nullable;
  * Finds the nearest matching block in a work area, a few hundred positions per tick so a big
  * area never causes a lag spike. One scanner per golem.
  *
- * <p>The area is a box around the center: up to {@code radius} blocks on X and Z (capped at
- * {@link GolemConfig#MAX_RADIUS}) and {@code verticalRange} blocks up and down. Positions are
- * visited nearest-first using an offset list sorted by squared distance, ties broken by dy, then
- * dx, then dz (all ascending), so the scan order is the same on every run. The offset list is
- * built once per (radius, verticalRange) and shared by every scanner with that shape.
+ * <p>The area is a <b>box, not a circle</b>: up to {@code radius} blocks on X and Z (capped at
+ * {@link GolemConfig#MAX_RADIUS}) and {@code verticalRange} blocks up and down, so radius 16 is a
+ * 33x33 area as the spec says. Positions are visited nearest-first using an offset list sorted by
+ * squared distance, ties broken by dy, then dx, then dz (all ascending), so the scan order is the
+ * same on every run. The offset list is built once per (radius, verticalRange) and shared by
+ * every scanner with that shape.
  *
- * <p>After a {@link Found}, the next {@link #step} carries on with the position after it, so a
- * caller can blacklist a result it can't reach and keep scanning without starting over.
+ * <p><b>How to use</b> (one scan pass yields each match at most once, nearest remaining first):
+ *
+ * <ol>
+ *   <li>Call {@link #reset} when entering the work state, and again only when a pass returns
+ *       {@link Exhausted} or the work center changes.
+ *   <li>Call {@link #step} once per tick until it returns {@link Found}. Then hold that target and
+ *       <b>stop stepping</b> while walking to it and breaking it; stepping meanwhile silently
+ *       consumes the candidates behind it.
+ *   <li>When the target is done, or turns out unreachable and is {@link #blacklist}ed, go back to
+ *       stepping <b>without</b> calling {@link #reset}. Resetting after every blacklist can
+ *       ping-pong between two unreachable targets and never reach a good one further out.
+ *   <li>Make blacklist durations outlast a full pass, so an unreachable block isn't retried in
+ *       the same pass it was given up on.
+ * </ol>
  */
 public final class AreaScanner {
 
@@ -27,7 +40,10 @@ public final class AreaScanner {
     public sealed interface Result permits Found, Scanning, Exhausted {
     }
 
-    /** A matching block, nearest to the center among those not blacklisted. */
+    /**
+     * A matching, non-blacklisted block: the nearest to the center among those not yet returned
+     * in this pass (the nearest overall only on the first {@code Found} after a {@link #reset}).
+     */
     public record Found(BlockPos pos) implements Result {
     }
 

@@ -199,7 +199,22 @@ class AreaScannerTest {
     }
 
     @Test
-    void blacklistAfterFoundThenContinueSkipsIt() {
+    void blacklistAfterFoundThenContinueReachesTheNextTarget() {
+        AreaScanner scanner = new AreaScanner(6, 2, 7);
+        FakeWorld world = new FakeWorld().with(rel(1, 0, 0), rel(2, 0, 0), rel(4, 0, 0));
+        scanner.reset(CENTER);
+
+        Result first = drain(scanner, world, 0);
+        assertEquals(new Found(rel(1, 0, 0)), first);
+        scanner.blacklist(((Found) first).pos(), 200);
+        assertEquals(new Found(rel(2, 0, 0)), drain(scanner, world, 10));
+        scanner.blacklist(rel(2, 0, 0), 200);
+        assertEquals(new Found(rel(4, 0, 0)), drain(scanner, world, 20));
+        assertInstanceOf(Exhausted.class, drain(scanner, world, 30));
+    }
+
+    @Test
+    void blacklistAfterFoundThenResetSkipsIt() {
         AreaScanner scanner = new AreaScanner(6, 2, BIG_BUDGET);
         FakeWorld world = new FakeWorld().with(rel(1, 0, 0), rel(4, 0, 0));
         scanner.reset(CENTER);
@@ -209,6 +224,36 @@ class AreaScannerTest {
         scanner.blacklist(((Found) first).pos(), 200);
         scanner.reset(CENTER);
         assertEquals(new Found(rel(4, 0, 0)), drain(scanner, world, 10));
+    }
+
+    @Test
+    void radiusSixteenIsA33By33Box() {
+        AreaScanner scanner = new AreaScanner(16, 0, BIG_BUDGET);
+        FakeWorld world = new FakeWorld().with(rel(16, 0, 16));
+        scanner.reset(CENTER);
+
+        assertEquals(33 * 33, scanner.areaSize());
+        assertEquals(new Found(rel(16, 0, 16)), drain(scanner, world, 0));
+    }
+
+    @Test
+    void largestShapeIsOrderedNearestFirst() {
+        int r = GolemConfig.MAX_RADIUS;
+        int[] offsets = AreaScanner.offsetsFor(r, 16);
+        int side = 2 * r + 1;
+        assertEquals(side * side * 33 * 3, offsets.length);
+        long previous = -1;
+        for (int i = 0; i < offsets.length; i += 3) {
+            int dx = offsets[i];
+            int dy = offsets[i + 1];
+            int dz = offsets[i + 2];
+            assertTrue(Math.abs(dx) <= r && Math.abs(dz) <= r && Math.abs(dy) <= 16,
+                    "offset out of bounds at " + i);
+            long dist = (long) dx * dx + (long) dy * dy + (long) dz * dz;
+            assertTrue(dist >= previous, "distance went down at " + i);
+            previous = dist;
+        }
+        assertEquals(r * r * 2 + 16 * 16, previous);
     }
 
     @Test
