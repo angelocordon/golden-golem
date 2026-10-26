@@ -2,6 +2,7 @@ package dev.angelocordon.goldengolem.build;
 
 import dev.angelocordon.goldengolem.Services;
 import dev.angelocordon.goldengolem.golem.GoldenGolem;
+import io.papermc.paper.event.player.PlayerNameEntityEvent;
 import java.util.UUID;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -11,11 +12,14 @@ import org.bukkit.SoundCategory;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Directional;
 import org.bukkit.entity.CopperGolem;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 
 /**
  * Turns a carved pumpkin or jack o'lantern placed on a gold block into a Golden Golem.
@@ -39,24 +43,41 @@ public final class GolemBuildListener implements Listener {
             return;
         }
         UUID owner = event.getPlayer().getUniqueId();
-        float yaw = event.getPlayer().getLocation().getYaw() + 180f;
-        services.plugin().getServer().getScheduler().runTask(services.plugin(), () -> build(head, owner, yaw));
+        services.plugin().getServer().getScheduler().runTask(services.plugin(), () -> build(head, owner));
     }
 
-    private void build(Block head, UUID owner, float yaw) {
+    /**
+     * The gold name is the golem's look, so name tags don't apply. Cancelling keeps the tag in
+     * the player's hand instead of consuming it for a rename that wouldn't stick.
+     */
+    @EventHandler(ignoreCancelled = true)
+    public void onName(PlayerNameEntityEvent event) {
+        if (GoldenGolem.isGoldenGolem(event.getEntity())) {
+            event.setCancelled(true);
+        }
+    }
+
+    private void build(Block head, UUID owner) {
         Block body = head.getRelative(BlockFace.DOWN);
         if (!BuildPattern.matches(head.getType(), body.getType())) {
             return;
         }
         World world = body.getWorld();
         Location spawnAt = body.getLocation().add(0.5, 0, 0.5);
-        spawnAt.setYaw(yaw);
+        BlockData headData = head.getBlockData();
+        if (headData instanceof Directional directional) {
+            // Face the way the pumpkin's face points, like vanilla golem builds.
+            spawnAt.setDirection(directional.getFacing().getDirection());
+        }
 
-        CopperGolem entity = world.spawn(spawnAt, CopperGolem.class, golem -> {
-            GoldenGolem.create(golem, owner);
-            golem.setOxidizing(CopperGolem.Oxidizing.waxed());
-            GolemLook.applyName(golem);
-        });
+        // BUILD_COPPERGOLEM so protection and mob-cap plugins treat it as a player-built golem.
+        // The PDC tag is already set when CreatureSpawnEvent fires, so plugins can tell it apart.
+        CopperGolem entity = world.spawn(spawnAt, CopperGolem.class, CreatureSpawnEvent.SpawnReason.BUILD_COPPERGOLEM,
+                golem -> {
+                    GoldenGolem.create(golem, owner);
+                    golem.setOxidizing(CopperGolem.Oxidizing.waxed());
+                    GolemLook.applyName(golem);
+                });
         if (!entity.isValid()) {
             // Another plugin cancelled the spawn; leave the blocks so nothing is lost.
             return;
