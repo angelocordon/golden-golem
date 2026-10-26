@@ -23,12 +23,15 @@ import dev.angelocordon.goldengolem.link.ChestLinker;
 import dev.angelocordon.goldengolem.menu.GolemMenuListener;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Wires everything together. Every feature is constructed and registered here, so feature work
  * happens in the feature's own files and this class rarely changes.
  */
 public final class GoldenGolemPlugin extends JavaPlugin {
+
+    private @Nullable GolemMenuListener menus;
 
     @Override
     public void onEnable() {
@@ -58,11 +61,20 @@ public final class GoldenGolemPlugin extends JavaPlugin {
         plugins.registerEvents(new GolemBuildListener(services), this);
         plugins.registerEvents(new GoldenChestListener(services), this);
         plugins.registerEvents(new ChestLinkListener(services), this);
-        plugins.registerEvents(new GolemMenuListener(services), this);
+        menus = new GolemMenuListener(services);
+        plugins.registerEvents(menus, this);
         plugins.registerEvents(new GolemLifecycleListener(services), this);
         new GolemLook(services).start();
 
         registry.scanLoadedWorlds();
         getServer().getScheduler().runTaskTimer(this, controller, 1L, 1L);
+    }
+
+    @Override
+    public void onDisable() {
+        // Players are kicked after plugins disable, so open menus must be saved here.
+        if (menus != null) {
+            menus.closeAll();
+        }
     }
 }
