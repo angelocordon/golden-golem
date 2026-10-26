@@ -8,6 +8,7 @@ import dev.angelocordon.goldengolem.golem.Feedback;
 import dev.angelocordon.goldengolem.golem.GolemController;
 import dev.angelocordon.goldengolem.golem.GolemRegistry;
 import dev.angelocordon.goldengolem.golem.GolemState;
+import dev.angelocordon.goldengolem.golem.movement.AiTakeover;
 import dev.angelocordon.goldengolem.golem.movement.Movers;
 import dev.angelocordon.goldengolem.golem.movement.PathMover;
 import dev.angelocordon.goldengolem.golem.state.BlockedHandler;
@@ -36,6 +37,7 @@ public final class GoldenGolemPlugin extends JavaPlugin {
         GolemConfig config = GolemConfig.from(getConfig());
 
         GolemRegistry registry = new GolemRegistry(getLogger());
+        registry.onGolemLoaded(AiTakeover::apply);
         Movers movers = new Movers(PathMover::new);
         GolemController controller = new GolemController(getLogger(), registry, movers);
         GoldenChests chests = new GoldenChests(this);
