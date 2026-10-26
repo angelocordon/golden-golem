@@ -29,7 +29,13 @@ jobs:
           gradle-version: current
 
       - name: Build and test
-        run: gradle build -Pversion="${GITHUB_REF_NAME#v}"
+        # Only release tags set the plugin version; branch and PR builds stay "dev".
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            gradle build -Pversion="${GITHUB_REF_NAME#v}"
+          else
+            gradle build
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
