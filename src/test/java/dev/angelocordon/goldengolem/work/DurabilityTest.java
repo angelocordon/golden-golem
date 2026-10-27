@@ -1,8 +1,10 @@
 package dev.angelocordon.goldengolem.work;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.angelocordon.goldengolem.GolemConfig;
 import org.junit.jupiter.api.Test;
 
 class DurabilityTest {
@@ -64,5 +66,39 @@ class DurabilityTest {
     void unbreakableToolIsNeverLow() {
         assertFalse(Durability.isLow(100, 100, 50.0, 64, true));
         assertTrue(Durability.isLow(100, 100, 50.0, 64, false));
+    }
+
+    @Test
+    void itemReadingUsesConfigThresholds() {
+        GolemConfig config = new GolemConfig(16, 4, 256, 64, 0.0, 3);
+        assertFalse(Durability.isLow(1561, 0, false, config));
+        assertFalse(Durability.isLow(1561, 1557, false, config));
+        assertTrue(Durability.isLow(1561, 1558, false, config));
+    }
+
+    @Test
+    void itemWithoutMaxDamageIsNeverLow() {
+        assertFalse(Durability.isLow(null, 0, false, GolemConfig.DEFAULTS));
+    }
+
+    @Test
+    void unbreakableItemIsNeverLow() {
+        assertFalse(Durability.isLow(1561, 1560, true, GolemConfig.DEFAULTS));
+    }
+
+    @Test
+    void missingItemIsNotLow() {
+        assertFalse(Durability.isLow((org.bukkit.inventory.ItemStack) null, GolemConfig.DEFAULTS));
+    }
+
+    @Test
+    void usesLeftIsMaxDamageMinusDamage() {
+        assertEquals(61, Durability.usesLeft(250, 189, false));
+    }
+
+    @Test
+    void usesLeftIsUnlimitedWithoutDurability() {
+        assertEquals(Integer.MAX_VALUE, Durability.usesLeft(null, 0, false));
+        assertEquals(Integer.MAX_VALUE, Durability.usesLeft(250, 249, true));
     }
 }

@@ -1,6 +1,8 @@
 package dev.angelocordon.goldengolem.work;
 
 import dev.angelocordon.goldengolem.work.HarvestRule.ToolKind;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -8,8 +10,9 @@ import org.bukkit.Material;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Picks the replacement tool from the chest when the golem's tool is worn out or missing. Pure:
- * the caller reads each chest tool's type, uses left and low flag off the item and passes them in.
+ * Picks the replacement tool from the chest when the golem's tool is worn out or missing, and
+ * works out the chest after the swap. Pure: the caller reads each chest tool's type, uses left
+ * and low flag off the item and passes them in.
  */
 public final class ToolSwap {
 
@@ -22,6 +25,15 @@ public final class ToolSwap {
      * @param low whether {@link Durability#isLow} says it is worn out
      */
     public record Candidate(int slot, Material type, int usesLeft, boolean low) {
+    }
+
+    /**
+     * The chest after a swap, and the one tool that came out of it for the golem.
+     *
+     * @param chest the chest's new slots, same size as before
+     * @param taken a single tool (amount 1) taken from the picked slot
+     */
+    public record Applied<T>(List<@Nullable T> chest, T taken) {
     }
 
     /** Best first: higher tier, then more uses left, then the lower slot so the pick is stable. */
@@ -92,5 +104,34 @@ public final class ToolSwap {
             return 4;
         }
         return -1;
+    }
+
+    /**
+     * Takes one tool out of chest {@code slot} and puts {@code worn} (if any) into the chest.
+     * Taking first frees the slot when the stack held one tool, so the worn tool nearly always
+     * fits; a stacked tool is split and the rest stays. Returns empty, meaning the caller writes
+     * nothing, when the worn tool doesn't fit. Item totals are unchanged: the worn tool goes in,
+     * the taken one comes out. Inputs are never mutated.
+     *
+     * @throws IllegalArgumentException if {@code slot} is empty
+     */
+    public static <T> Optional<Applied<T>> apply(
+            List<? extends @Nullable T> chest, @Nullable T worn, int slot, Deposit.Stacks<T> stacks) {
+        List<@Nullable T> slots = new ArrayList<>(chest);
+        T stack = slots.get(slot);
+        if (stack == null) {
+            throw new IllegalArgumentException("chest slot " + slot + " is empty");
+        }
+        int amount = stacks.amount(stack);
+        T taken = stacks.withAmount(stack, 1);
+        slots.set(slot, amount > 1 ? stacks.withAmount(stack, amount - 1) : null);
+        if (worn == null) {
+            return Optional.of(new Applied<>(Collections.unmodifiableList(slots), taken));
+        }
+        Deposit.Result<T> stored = Deposit.into(slots, List.of(worn), stacks);
+        if (!stored.allDeposited()) {
+            return Optional.empty();
+        }
+        return Optional.of(new Applied<>(stored.chest(), taken));
     }
 }

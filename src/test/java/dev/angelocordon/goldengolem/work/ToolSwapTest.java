@@ -2,13 +2,17 @@ package dev.angelocordon.goldengolem.work;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.angelocordon.goldengolem.work.HarvestRule.ToolKind;
 import dev.angelocordon.goldengolem.work.ToolSwap.Candidate;
+import dev.angelocordon.goldengolem.work.DepositTest.Item;
 import java.util.List;
 import java.util.Optional;
 import org.bukkit.Material;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class ToolSwapTest {
@@ -94,5 +98,65 @@ class ToolSwapTest {
     void nonToolsAreNeverAcceptable() {
         assertFalse(ToolSwap.acceptable(Material.STICK, ToolKind.PICKAXE, Material.STONE));
         assertFalse(ToolSwap.acceptable(Material.IRON_SWORD, null, Material.STONE));
+    }
+
+    private static Item diamond() {
+        return new Item("diamond_pickaxe", 1, 1);
+    }
+
+    private static Item worn() {
+        return new Item("worn_iron_pickaxe", 1, 1);
+    }
+
+    private static Item dirt() {
+        return new Item("dirt", 64, 64);
+    }
+
+    @Test
+    void wornToolLandsInTheSlotTheReplacementLeft() {
+        List<@Nullable Item> chest = DepositTest.slots(3, dirt(), diamond(), dirt());
+        ToolSwap.Applied<Item> applied = ToolSwap.apply(chest, worn(), 1, DepositTest.STACKS).orElseThrow();
+
+        assertEquals(diamond(), applied.taken());
+        assertEquals(worn(), applied.chest().get(1));
+        assertEquals(DepositTest.totals(chest, List.of(worn())),
+                DepositTest.totals(applied.chest(), List.of(applied.taken())));
+    }
+
+    @Test
+    void stackedReplacementIsSplit() {
+        List<@Nullable Item> chest = DepositTest.slots(3, new Item("diamond_pickaxe", 2, 16));
+        ToolSwap.Applied<Item> applied = ToolSwap.apply(chest, worn(), 0, DepositTest.STACKS).orElseThrow();
+
+        assertEquals(new Item("diamond_pickaxe", 1, 16), applied.taken());
+        assertEquals(new Item("diamond_pickaxe", 1, 16), applied.chest().get(0));
+        assertEquals(worn(), applied.chest().get(1));
+        assertEquals(DepositTest.totals(chest, List.of(worn())),
+                DepositTest.totals(applied.chest(), List.of(applied.taken())));
+    }
+
+    @Test
+    void fullChestWithStackedReplacementChangesNothing() {
+        List<@Nullable Item> chest = DepositTest.slots(2, new Item("diamond_pickaxe", 2, 16), dirt());
+        List<@Nullable Item> before = new java.util.ArrayList<>(chest);
+
+        assertEquals(Optional.empty(), ToolSwap.apply(chest, worn(), 0, DepositTest.STACKS));
+        assertEquals(before, chest);
+    }
+
+    @Test
+    void withoutAWornToolOnlyTakes() {
+        List<@Nullable Item> chest = DepositTest.slots(2, diamond(), dirt());
+        ToolSwap.Applied<Item> applied = ToolSwap.apply(chest, null, 0, DepositTest.STACKS).orElseThrow();
+
+        assertEquals(diamond(), applied.taken());
+        assertNull(applied.chest().get(0));
+        assertEquals(dirt(), applied.chest().get(1));
+    }
+
+    @Test
+    void emptySlotIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ToolSwap.apply(DepositTest.slots(2), worn(), 0, DepositTest.STACKS));
     }
 }

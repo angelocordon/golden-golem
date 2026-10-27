@@ -1,8 +1,10 @@
 package dev.angelocordon.goldengolem.golem.state;
 
+import dev.angelocordon.goldengolem.GolemConfig;
 import dev.angelocordon.goldengolem.golem.BlockedReason;
 import dev.angelocordon.goldengolem.golem.GolemState;
 import dev.angelocordon.goldengolem.work.Durability;
+import org.bukkit.inventory.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -30,11 +32,11 @@ public final class BlockedRecheck {
     /**
      * True if the tool slot holds a tool that can still work. A worn-out tool counts as no tool:
      * WORKING would just send it straight back to the chest for a replacement that isn't there,
-     * then block NO_TOOL again, forever. Unbreakable tools are never worn out.
+     * then block NO_TOOL again, forever. Uses {@link Durability#isLow(ItemStack, GolemConfig)}, the
+     * same reading as WORKING and DEPOSITING, so the states can't disagree.
      */
-    public static boolean usableTool(boolean present, int maxDamage, int damage, boolean unbreakable,
-            double lowPercent, int lowUses) {
-        return present && !Durability.isLow(maxDamage, damage, lowPercent, lowUses, unbreakable);
+    public static boolean usableTool(@Nullable ItemStack tool, GolemConfig config) {
+        return tool != null && !tool.isEmpty() && !Durability.isLow(tool, config);
     }
 
     /** The state a golem blocked for {@code reason} should move to, or BLOCKED if it's still stuck. */

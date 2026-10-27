@@ -3,20 +3,17 @@ package dev.angelocordon.goldengolem.golem.state;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.angelocordon.goldengolem.GolemConfig;
 import dev.angelocordon.goldengolem.golem.BlockedReason;
 import dev.angelocordon.goldengolem.golem.GolemState;
 import dev.angelocordon.goldengolem.golem.state.BlockedRecheck.Facts;
+import dev.angelocordon.goldengolem.work.Durability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class BlockedRecheckTest {
-
-    /** Default config thresholds: 5% or 3 uses left. */
-    private static final double LOW_PERCENT = 5.0;
-    private static final int LOW_USES = 3;
 
     /** Everything fine: usable fitting tool, golden chest with room, work center. */
     private static final Facts ALL_GOOD = new Facts(true, true, true, true, true);
@@ -74,8 +71,8 @@ class BlockedRecheckTest {
     @Test
     void wornOutToolWithNoReplacementStaysBlockedNoTool() {
         int maxDamage = 1561;
-        int damage = 1559; // 2 uses left: low by the 3-use threshold
-        boolean usable = BlockedRecheck.usableTool(true, maxDamage, damage, false, LOW_PERCENT, LOW_USES);
+        int damage = 1559; // 2 uses left: low by the default 3-use threshold
+        boolean usable = !Durability.isLow(maxDamage, damage, false, GolemConfig.DEFAULTS);
         Facts wornTool = facts(usable, true, true, true, true);
 
         assertFalse(usable);
@@ -84,18 +81,8 @@ class BlockedRecheckTest {
     }
 
     @Test
-    void freshToolIsUsable() {
-        assertTrue(BlockedRecheck.usableTool(true, 1561, 0, false, LOW_PERCENT, LOW_USES));
-    }
-
-    @Test
-    void unbreakableToolIsNeverWornOut() {
-        assertTrue(BlockedRecheck.usableTool(true, 1561, 1560, true, LOW_PERCENT, LOW_USES));
-    }
-
-    @Test
     void missingToolIsNotUsable() {
-        assertFalse(BlockedRecheck.usableTool(false, 0, 0, false, LOW_PERCENT, LOW_USES));
+        assertFalse(BlockedRecheck.usableTool(null, GolemConfig.DEFAULTS));
     }
 
     @Test

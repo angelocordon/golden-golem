@@ -47,7 +47,8 @@ public final class ReturningHandler implements StateHandler {
             return StateHandler.block(golem, BlockedReason.CHEST_MISSING);
         }
         if (!chest.getWorld().equals(golem.entity().getWorld())) {
-            return StateHandler.block(golem, BlockedReason.UNREACHABLE);
+            // Walking can't fix this, so not UNREACHABLE (which the recheck retries as if it could).
+            return StateHandler.block(golem, BlockedReason.CHEST_MISSING);
         }
         Location center = chest.getLocation().toCenterLocation();
         Mover mover = services.movers().of(golem);

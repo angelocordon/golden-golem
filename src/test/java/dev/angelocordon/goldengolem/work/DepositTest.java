@@ -2,6 +2,7 @@ package dev.angelocordon.goldengolem.work;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,7 +20,7 @@ class DepositTest {
     record Item(String type, int amount, int max) {
     }
 
-    private static final Deposit.Stacks<Item> STACKS = new Deposit.Stacks<>() {
+    static final Deposit.Stacks<Item> STACKS = new Deposit.Stacks<>() {
         @Override
         public int amount(Item stack) {
             return stack.amount();
@@ -53,7 +54,7 @@ class DepositTest {
         return new Item("pickaxe", 1, 1);
     }
 
-    private static List<@Nullable Item> slots(int size, @Nullable Item... filled) {
+    static List<@Nullable Item> slots(int size, @Nullable Item... filled) {
         List<@Nullable Item> slots = new ArrayList<>(Arrays.asList(new Item[size]));
         for (int i = 0; i < filled.length; i++) {
             slots.set(i, filled[i]);
@@ -61,7 +62,7 @@ class DepositTest {
         return slots;
     }
 
-    private static Map<String, Integer> totals(List<@Nullable Item> a, List<@Nullable Item> b) {
+    static Map<String, Integer> totals(List<@Nullable Item> a, List<@Nullable Item> b) {
         Map<String, Integer> totals = new TreeMap<>();
         for (List<@Nullable Item> list : List.of(a, b)) {
             for (Item item : list) {
@@ -182,7 +183,7 @@ class DepositTest {
     }
 
     @Test
-    void neverMutatesItsInputs() {
+    void neverModifiesInputLists() {
         List<@Nullable Item> chest = slots(27, stone(10));
         List<@Nullable Item> storage = slots(15, stone(10));
         List<@Nullable Item> chestBefore = new ArrayList<>(chest);
@@ -192,6 +193,22 @@ class DepositTest {
 
         assertEquals(chestBefore, chest);
         assertEquals(storageBefore, storage);
+    }
+
+    /**
+     * Bukkit inventory contents can be live mirrors, so a changed slot must be a fresh copy from
+     * {@code withAmount}, never the input object (which a mutating merge would hand back).
+     */
+    @Test
+    void changedSlotsAreFreshCopies() {
+        Item partial = stone(10);
+        Item stored = stone(70);
+        Deposit.Result<Item> result = Deposit.into(slots(2, partial), slots(1, stored), STACKS);
+
+        assertEquals(stone(64), result.chest().get(0));
+        assertNotSame(partial, result.chest().get(0));
+        assertEquals(stone(16), result.chest().get(1));
+        assertNotSame(stored, result.chest().get(1));
     }
 
     @Test
