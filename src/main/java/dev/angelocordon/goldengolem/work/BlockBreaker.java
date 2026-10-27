@@ -1,7 +1,5 @@
 package dev.angelocordon.goldengolem.work;
 
-import dev.angelocordon.goldengolem.GolemConfig;
-import io.papermc.paper.datacomponent.DataComponentTypes;
 import java.util.ArrayList;
 import java.util.List;
 import org.bukkit.Effect;
@@ -96,20 +94,10 @@ public final class BlockBreaker {
 
     /**
      * Wears the tool by one use, with Unbreaking applied by the server. Returns the new tool;
-     * empty only if it broke, which {@link #isLow} checks before every break rule out.
+     * empty only if it broke, which the {@code Durability.isLow} check before every break
+     * rules out.
      */
     public static ItemStack wearTool(ItemStack tool, LivingEntity golem) {
         return tool.damage(1, golem);
-    }
-
-    /** True if the tool is worn out per the config ({@link Durability#isLow}). */
-    public static boolean isLow(ItemStack tool, GolemConfig config) {
-        Integer maxDamage = tool.getData(DataComponentTypes.MAX_DAMAGE);
-        if (maxDamage == null) {
-            return false;
-        }
-        int damage = tool.getDataOrDefault(DataComponentTypes.DAMAGE, 0);
-        return Durability.isLow(maxDamage, damage, config.lowDurabilityPercent(), config.lowDurabilityUses(),
-                tool.hasData(DataComponentTypes.UNBREAKABLE));
     }
 }

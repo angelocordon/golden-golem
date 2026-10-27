@@ -12,6 +12,7 @@ import dev.angelocordon.goldengolem.util.BlockPos;
 import dev.angelocordon.goldengolem.work.AreaScanner;
 import dev.angelocordon.goldengolem.work.BlockBreaker;
 import dev.angelocordon.goldengolem.work.BreakTime;
+import dev.angelocordon.goldengolem.work.Durability;
 import dev.angelocordon.goldengolem.work.HarvestRule;
 import dev.angelocordon.goldengolem.work.HazardCheck;
 import dev.angelocordon.goldengolem.work.StorageMerge;
@@ -183,7 +184,7 @@ public final class WorkingHandler implements StateHandler {
         w.tool = tool;
         w.toolDueAt = now + TOOL_REFRESH_TICKS;
         w.toolFits = tool != null && targetType != null && HarvestRule.toolFits(tool.getType(), targetType);
-        w.toolLow = tool != null && BlockBreaker.isLow(tool, services.config());
+        w.toolLow = Durability.isLow(tool, services.config());
     }
 
     private static WorkDecision decide(boolean hasWorkCenter, Work w) {
