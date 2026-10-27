@@ -1,25 +1,173 @@
 package dev.angelocordon.goldengolem.golem.state;
 
+import dev.angelocordon.goldengolem.GolemConfig;
 import dev.angelocordon.goldengolem.Services;
+import dev.angelocordon.goldengolem.golem.BlockedReason;
 import dev.angelocordon.goldengolem.golem.GoldenGolem;
 import dev.angelocordon.goldengolem.golem.GolemState;
 import dev.angelocordon.goldengolem.golem.StateHandler;
+import dev.angelocordon.goldengolem.util.BlockLocation;
+import dev.angelocordon.goldengolem.work.HarvestRule;
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.jspecify.annotations.Nullable;
 
 /**
- * Shows why the golem is stuck and rechecks every few seconds.
- *
- * <p>TODO(LAB-22): implement. Stub: stays in BLOCKED.
+ * Stands still, tells the owner why it's stuck, and rechecks every {@link #RECHECK_TICKS} ticks.
+ * The decisions live in {@link BlockedRecheck}; this class only gathers the facts.
  */
 public final class BlockedHandler implements StateHandler {
 
+    static final int RECHECK_TICKS = 60;
+
     private final Services services;
+    /** Ticks left until each blocked golem's next recheck. Pruned in onExit and on each recheck. */
+    private final Map<UUID, Integer> untilRecheck = new HashMap<>();
+    /**
+     * Golems leaving for an UNREACHABLE retry. Their problem isn't known to be fixed, so their
+     * announcement isn't reset, or a golem that keeps failing would say "no" every 3 seconds.
+     */
+    private final Set<UUID> retrying = new HashSet<>();
 
     public BlockedHandler(Services services) {
         this.services = services;
     }
 
     @Override
+    public void onEnter(GoldenGolem golem) {
+        services.movers().of(golem).stop();
+        untilRecheck.put(golem.id(), RECHECK_TICKS);
+        BlockedReason reason = golem.blockedReason();
+        if (reason != null) {
+            services.feedback().blocked(golem, reason);
+        }
+    }
+
+    @Override
+    public void onExit(GoldenGolem golem) {
+        untilRecheck.remove(golem.id());
+        if (!retrying.remove(golem.id())) {
+            // Fixed, or a player stepped in: if it blocks again for the same reason, say so.
+            services.feedback().cleared(golem);
+        }
+    }
+
+    @Override
     public GolemState tick(GoldenGolem golem) {
+        // A golem loaded already BLOCKED (after a restart) never ran onEnter, so start its timer here.
+        int left = untilRecheck.getOrDefault(golem.id(), RECHECK_TICKS) - 1;
+        if (left > 0) {
+            untilRecheck.put(golem.id(), left);
+            return GolemState.BLOCKED;
+        }
+        untilRecheck.put(golem.id(), RECHECK_TICKS);
+        // onExit doesn't run for golems that unload or die while blocked, so drop those here.
+        untilRecheck.keySet().removeIf(id -> services.registry().get(id).isEmpty());
+        retrying.removeIf(id -> services.registry().get(id).isEmpty());
+        return recheck(golem);
+    }
+
+    private GolemState recheck(GoldenGolem golem) {
+        BlockedReason reason = golem.blockedReason();
+        BlockedRecheck.Facts facts = facts(golem);
+        GolemState next = BlockedRecheck.decide(reason, facts);
+        if (next != GolemState.BLOCKED) {
+            if (reason == BlockedReason.UNREACHABLE) {
+                retrying.add(golem.id());
+            }
+            return next;
+        }
+        BlockedReason current = BlockedRecheck.currentReason(reason, facts);
+        if (current != null && current != reason) {
+            StateHandler.block(golem, current);
+            services.feedback().blocked(golem, current);
+        }
         return GolemState.BLOCKED;
+    }
+
+    private BlockedRecheck.Facts facts(GoldenGolem golem) {
+        ItemStack tool = golem.tool();
+        Material target = golem.target();
+        boolean hasUsableTool = tool != null && !tool.isEmpty() && isUsable(tool);
+        boolean toolFits = tool != null && !tool.isEmpty() && target != null && toolFits(tool, target);
+
+        Inventory chest = chestInventory(golem.chest());
+        boolean chestHasRoom = chest != null && hasRoom(chest, golem.storage());
+
+        return new BlockedRecheck.Facts(hasUsableTool, toolFits, chest != null, chestHasRoom,
+                golem.workCenter() != null);
+    }
+
+    private boolean isUsable(ItemStack tool) {
+        GolemConfig config = services.config();
+        Integer maxDamage = tool.getData(DataComponentTypes.MAX_DAMAGE);
+        Integer damage = tool.getData(DataComponentTypes.DAMAGE);
+        return BlockedRecheck.usableTool(true,
+                maxDamage == null ? 0 : maxDamage,
+                damage == null ? 0 : damage,
+                tool.hasData(DataComponentTypes.UNBREAKABLE),
+                config.lowDurabilityPercent(), config.lowDurabilityUses());
+    }
+
+    /**
+     * The right kind of tool ({@link HarvestRule#toolFits}) and a high enough tier, so a wooden
+     * pickaxe on diamond ore stays CANT_HARVEST instead of bouncing back to WORKING. This mirrors
+     * {@link HarvestRule#canHarvest} without a block in the world (so without its drops check); it
+     * must stay in step with what WORKING blocks on (LAB-19), or the golem bounces between the two.
+     */
+    private static boolean toolFits(ItemStack tool, Material target) {
+        return HarvestRule.toolFits(tool.getType(), target)
+                && target.isBlock()
+                && target.createBlockData().isPreferredTool(tool);
+    }
+
+    /**
+     * True if the chest has an empty slot, or a partial stack that one of the golem's storage
+     * items could merge into. Deposit (LAB-20) merges into partial stacks too, so a chest full of
+     * half stacks isn't "full". Swap to LAB-20's deposit helper once it lands.
+     */
+    private static boolean hasRoom(Inventory chest, @Nullable ItemStack[] storage) {
+        if (chest.firstEmpty() != -1) {
+            return true;
+        }
+        for (ItemStack slot : chest.getStorageContents()) {
+            if (slot == null || slot.getAmount() >= slot.getMaxStackSize()) {
+                continue;
+            }
+            for (ItemStack carried : storage) {
+                if (carried != null && carried.isSimilar(slot)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The linked golden chest's inventory, or null if there's no link, the chest's chunk isn't
+     * loaded (we never load chunks for a recheck), or it isn't a golden chest any more.
+     */
+    private @Nullable Inventory chestInventory(@Nullable BlockLocation link) {
+        if (link == null) {
+            return null;
+        }
+        World world = link.loadedWorld();
+        if (world == null || !world.isChunkLoaded(link.pos().x() >> 4, link.pos().z() >> 4)) {
+            return null;
+        }
+        Block block = world.getBlockAt(link.pos().x(), link.pos().y(), link.pos().z());
+        if (!services.chests().isGoldenChest(block)) {
+            return null;
+        }
+        return services.chests().inventoryOf(block);
     }
 }
