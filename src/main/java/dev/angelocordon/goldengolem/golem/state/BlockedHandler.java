@@ -6,9 +6,12 @@ import dev.angelocordon.goldengolem.golem.GoldenGolem;
 import dev.angelocordon.goldengolem.golem.GolemState;
 import dev.angelocordon.goldengolem.golem.StateHandler;
 import dev.angelocordon.goldengolem.util.BlockLocation;
+import dev.angelocordon.goldengolem.work.Deposit;
 import dev.angelocordon.goldengolem.work.HarvestRule;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -106,25 +109,35 @@ public final class BlockedHandler implements StateHandler {
     }
 
     /**
-     * True if the chest has an empty slot, or a partial stack that one of the golem's storage
-     * items could merge into. Deposit (LAB-20) merges into partial stacks too, so a chest full of
-     * half stacks isn't "full". Swap to LAB-20's deposit helper once it lands.
+     * True if a deposit would move at least one item: an empty slot, or room in a partial stack.
+     * Uses the same {@link Deposit} merge as DEPOSITING, so the two can't disagree and bounce.
      */
     private static boolean hasRoom(Inventory chest, @Nullable ItemStack[] storage) {
         if (chest.firstEmpty() != -1) {
             return true;
         }
-        for (ItemStack slot : chest.getStorageContents()) {
-            if (slot == null || slot.getAmount() >= slot.getMaxStackSize()) {
-                continue;
-            }
-            for (ItemStack carried : storage) {
-                if (carried != null && carried.isSimilar(slot)) {
-                    return true;
-                }
+        List<@Nullable ItemStack> carried = nonEmpty(storage);
+        Deposit.Result<ItemStack> trial = Deposit.into(
+                nonEmpty(chest.getStorageContents()), carried, Deposit.itemStacks(chest.getMaxStackSize()));
+        return totalAmount(trial.leftovers()) < totalAmount(carried);
+    }
+
+    private static List<@Nullable ItemStack> nonEmpty(@Nullable ItemStack[] slots) {
+        List<@Nullable ItemStack> list = new ArrayList<>(slots.length);
+        for (ItemStack slot : slots) {
+            list.add(slot == null || slot.isEmpty() ? null : slot);
+        }
+        return list;
+    }
+
+    private static int totalAmount(List<@Nullable ItemStack> slots) {
+        int total = 0;
+        for (ItemStack slot : slots) {
+            if (slot != null) {
+                total += slot.getAmount();
             }
         }
-        return false;
+        return total;
     }
 
     /**
