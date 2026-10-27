@@ -99,25 +99,13 @@ public final class BlockedHandler implements StateHandler {
         ItemStack tool = golem.tool();
         Material target = golem.target();
         boolean hasUsableTool = BlockedRecheck.usableTool(tool, services.config());
-        boolean toolFits = tool != null && !tool.isEmpty() && target != null && toolFits(tool, target);
+        boolean toolFits = tool != null && target != null && HarvestRule.toolCanHarvest(tool, target);
 
         Inventory chest = chestInventory(golem.chest());
         boolean chestHasRoom = chest != null && hasRoom(chest, golem.storage());
 
         return new BlockedRecheck.Facts(hasUsableTool, toolFits, chest != null, chestHasRoom,
                 golem.workCenter() != null);
-    }
-
-    /**
-     * The right kind of tool ({@link HarvestRule#toolFits}) and a high enough tier, so a wooden
-     * pickaxe on diamond ore stays CANT_HARVEST instead of bouncing back to WORKING. This mirrors
-     * {@link HarvestRule#canHarvest} without a block in the world (so without its drops check); it
-     * must stay in step with what WORKING blocks on (LAB-19), or the golem bounces between the two.
-     */
-    private static boolean toolFits(ItemStack tool, Material target) {
-        return HarvestRule.toolFits(tool.getType(), target)
-                && target.isBlock()
-                && target.createBlockData().isPreferredTool(tool);
     }
 
     /**
