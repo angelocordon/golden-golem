@@ -7,12 +7,13 @@ import dev.angelocordon.goldengolem.golem.GolemState;
 import dev.angelocordon.goldengolem.util.BlockLocation;
 import dev.angelocordon.goldengolem.util.BlockPos;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
@@ -26,16 +27,19 @@ import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.PlayerInventory;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Relinks a following golem when its owner right-clicks a golden chest, and blocks golems
  * whose chest is broken.
  *
- * <p>Breaks are handled by re-checking links one tick later instead of reading the event's block
- * list: the golden chest listener takes golden chests out of explosion lists and breaks them
- * itself, so at MONITOR they may already be gone from the list. Checking the world after the
- * fact catches every cause the same way.
+ * <p>Breaks are handled in two steps. While the chest is still readable, each broken golden half
+ * is recorded with its surviving golden partner (if any). One tick later, once the world has
+ * settled, {@link #checkLinks} reads what is actually there and lets {@link LinkCheck} decide.
+ * Reading the world afterwards, rather than trusting the event, matters because the golden chest
+ * listener removes golden chests from explosion lists and breaks them itself at HIGHEST, and
+ * cancels the wither's block change, so later handlers can't see those chests in the event.
  */
 public final class ChestLinkListener implements Listener {
 
@@ -43,10 +47,14 @@ public final class ChestLinkListener implements Listener {
     static final double RELINK_RADIUS = 8;
 
     private final Services services;
+    /** Broken golden halves since the last check, mapped to their surviving golden partner. */
+    private final Map<BlockLocation, @Nullable BlockLocation> survivors = new HashMap<>();
     private boolean checkScheduled;
 
     public ChestLinkListener(Services services) {
         this.services = services;
+        // Catches a chest that broke while its golem was unloaded, once both are loaded again.
+        services.registry().onGolemLoaded(golem -> scheduleLinkCheck());
     }
 
     /**
@@ -59,42 +67,62 @@ public final class ChestLinkListener implements Listener {
             return;
         }
         Block block = event.getClickedBlock();
-        if (block == null || !services.chests().isGoldenChest(block)) {
+        Player player = event.getPlayer();
+        if (block == null || isUsingItem(player) || !services.chests().isGoldenChest(block)) {
             return;
         }
-        Optional<GoldenGolem> golem = nearestFollowingGolem(event.getPlayer(), block);
+        Optional<GoldenGolem> golem = nearestFollowingGolem(player, block);
         if (golem.isPresent() && services.linker().relink(golem.get(), block)) {
             event.setCancelled(true);
         }
     }
 
+    /** The block is still there at MONITOR, so its partner can be read. */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
-        if (services.chests().isGoldenChest(event.getBlock())) {
-            scheduleLinkCheck();
-        }
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onEntityExplode(EntityExplodeEvent event) {
-        scheduleLinkCheck();
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onBlockExplode(BlockExplodeEvent event) {
-        scheduleLinkCheck();
+        recordIfGolden(event.getBlock());
     }
 
     /**
-     * Withers break blocks through this event. Not ignoreCancelled: the golden chest listener
-     * cancels it and breaks the chest itself. The check reads the world, so a truly cancelled
-     * event just finds every link intact.
+     * LOWEST: golden chests are still in the list here, before the golden chest listener takes
+     * them out at HIGHEST. Not ignoreCancelled, and recording is safe even if the explosion is
+     * cancelled later: the check only moves a link off a half that is really gone.
      */
-    @EventHandler(priority = EventPriority.MONITOR)
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onEntityExplode(EntityExplodeEvent event) {
+        event.blockList().forEach(this::recordIfGolden);
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onBlockExplode(BlockExplodeEvent event) {
+        event.blockList().forEach(this::recordIfGolden);
+    }
+
+    /**
+     * Withers break blocks through this event. Any change away from a chest counts: a waterlogged
+     * chest turns to water, not air. Filtering on the chest also skips falling-block spawns.
+     */
+    @EventHandler(priority = EventPriority.LOWEST)
     public void onEntityChangeBlock(EntityChangeBlockEvent event) {
-        if (event.getTo().isAir()) {
-            scheduleLinkCheck();
+        if (event.getTo() != Material.CHEST) {
+            recordIfGolden(event.getBlock());
         }
+    }
+
+    private void recordIfGolden(Block block) {
+        if (block.getType() != Material.CHEST || !services.chests().isGoldenChest(block)) {
+            return;
+        }
+        Block partner = services.linker().partnerOf(block);
+        survivors.put(BlockLocation.of(block), partner == null ? null : BlockLocation.of(partner));
+        scheduleLinkCheck();
+    }
+
+    /** Sneaking with an item uses the item (e.g. places a block) instead of opening the chest. */
+    private static boolean isUsingItem(Player player) {
+        PlayerInventory inventory = player.getInventory();
+        return player.isSneaking()
+                && !(inventory.getItemInMainHand().isEmpty() && inventory.getItemInOffHand().isEmpty());
     }
 
     private Optional<GoldenGolem> nearestFollowingGolem(Player player, Block chest) {
@@ -102,11 +130,11 @@ public final class ChestLinkListener implements Listener {
         Location at = player.getLocation();
         List<GoldenGolem> following = new ArrayList<>();
         for (GoldenGolem golem : services.registry().all()) {
+            if (!golem.isValid() || golem.state() != GolemState.FOLLOWING || !golem.isOwnedBy(playerId)) {
+                continue;
+            }
             Location golemAt = golem.entity().getLocation();
-            if (golem.isValid()
-                    && golem.state() == GolemState.FOLLOWING
-                    && golem.isOwnedBy(playerId)
-                    && golemAt.getWorld().equals(at.getWorld())
+            if (golemAt.getWorld().equals(at.getWorld())
                     && golemAt.distanceSquared(at) <= RELINK_RADIUS * RELINK_RADIUS) {
                 following.add(golem);
             }
@@ -124,47 +152,62 @@ public final class ChestLinkListener implements Listener {
     }
 
     /**
-     * Unlinks every loaded golem whose chest is no longer a golden chest, then any golems beyond a
-     * chest's capacity (a double chest that lost a half only holds one). Links into unloaded chunks
-     * are left alone: we can't see the chest without loading it.
+     * Gathers every loaded golem's link and the golden chests involved, then applies
+     * {@link LinkCheck#decide}. Links into unloaded chunks are left out: we can't see the chest
+     * without loading it.
      */
     private void checkLinks() {
         checkScheduled = false;
-        ChestLinker linker = services.linker();
-        Map<BlockLocation, List<GoldenGolem>> byChest = new LinkedHashMap<>();
+        // HashMap, not Map.copyOf: a broken single chest maps to a null survivor.
+        Map<BlockLocation, @Nullable BlockLocation> survivorsNow = new HashMap<>(survivors);
+        survivors.clear();
+
+        Map<UUID, GoldenGolem> golems = new HashMap<>();
+        List<LinkCheck.Link> links = new ArrayList<>();
+        Map<BlockLocation, LinkCheck.ChestInfo> golden = new HashMap<>();
         for (GoldenGolem golem : services.registry().all()) {
             BlockLocation link = golem.chest();
-            if (link == null || !golem.isValid()) {
+            if (link == null || !golem.isValid() || loadedBlock(link) == null) {
                 continue;
             }
-            Block block = loadedBlock(link);
-            if (block == null) {
-                continue;
+            golems.put(golem.id(), golem);
+            links.add(new LinkCheck.Link(golem.id(), link));
+            addIfGolden(golden, link);
+            BlockLocation survivor = survivorsNow.get(link);
+            if (survivor != null) {
+                addIfGolden(golden, survivor);
             }
-            if (!services.chests().isGoldenChest(block)) {
-                unlink(golem);
-                continue;
-            }
-            byChest.computeIfAbsent(BlockLocation.of(linker.canonical(block)), key -> new ArrayList<>()).add(golem);
         }
-        for (Map.Entry<BlockLocation, List<GoldenGolem>> entry : byChest.entrySet()) {
-            Block chest = entry.getKey().block();
-            List<GoldenGolem> linked = entry.getValue();
-            int capacity = chest == null ? 0 : services.chests().golemCapacity(chest);
-            for (int i = capacity; i < linked.size(); i++) {
-                unlink(linked.get(i));
-            }
+
+        LinkCheck.Result result = LinkCheck.decide(links, golden, survivorsNow);
+        result.moved().forEach((id, chest) -> golems.get(id).setChest(chest));
+        for (UUID id : result.missing()) {
+            unlink(golems.get(id), "Golden Golem lost its golden chest");
+        }
+        for (UUID id : result.overCapacity()) {
+            unlink(golems.get(id), "Golden Golem's chest is full, so it was unlinked");
         }
     }
 
-    private void unlink(GoldenGolem golem) {
+    private void addIfGolden(Map<BlockLocation, LinkCheck.ChestInfo> golden, BlockLocation location) {
+        if (golden.containsKey(location)) {
+            return;
+        }
+        Block block = loadedBlock(location);
+        if (block != null && services.chests().isGoldenChest(block)) {
+            BlockLocation canonical = BlockLocation.of(services.linker().canonical(block));
+            golden.put(location, new LinkCheck.ChestInfo(canonical, services.chests().golemCapacity(block)));
+        }
+    }
+
+    private void unlink(GoldenGolem golem, String message) {
         golem.setChest(null);
         GolemState state = golem.state();
         if (state == GolemState.WORKING || state == GolemState.RETURNING || state == GolemState.DEPOSITING) {
             golem.setBlockedReason(BlockedReason.CHEST_MISSING);
             services.controller().transition(golem, GolemState.BLOCKED);
         }
-        services.feedback().tell(golem, "Golden Golem lost its golden chest");
+        services.feedback().tell(golem, message);
     }
 
     private static @Nullable Block loadedBlock(BlockLocation location) {

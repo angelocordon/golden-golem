@@ -20,6 +20,7 @@ public final class ChestHalves {
     /**
      * Where the other half of a double chest is, or null for a single chest. Mirrors vanilla: a
      * LEFT half's partner is clockwise of its facing, a RIGHT half's is counter-clockwise.
+     * Keep in sync with {@code GoldenChests.partnerFace}, which applies the same rule.
      */
     public static @Nullable BlockPos partner(BlockPos pos, BlockFace facing, Chest.Type type) {
         BlockFace side = switch (type) {
