@@ -70,15 +70,23 @@ public final class GolemRegistry implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onRemove(EntityRemoveFromWorldEvent event) {
-        golems.remove(event.getEntity().getUniqueId());
+        // A cross-world teleport recreates the entity under the same UUID, and the new copy may be
+        // added before the old one is removed. Only drop the entry if it's this exact entity.
+        GoldenGolem tracked = golems.get(event.getEntity().getUniqueId());
+        if (tracked != null && tracked.entity() == event.getEntity()) {
+            golems.remove(tracked.id());
+        }
     }
 
     private void add(Entity entity) {
         GoldenGolem.of(entity).ifPresent(golem -> {
-            if (golems.putIfAbsent(golem.id(), golem) == null) {
-                for (Consumer<GoldenGolem> hook : loadHooks) {
-                    runHook(hook, golem);
-                }
+            GoldenGolem previous = golems.get(golem.id());
+            if (previous != null && previous.entity() == entity) {
+                return;
+            }
+            golems.put(golem.id(), golem);
+            for (Consumer<GoldenGolem> hook : loadHooks) {
+                runHook(hook, golem);
             }
         });
     }
