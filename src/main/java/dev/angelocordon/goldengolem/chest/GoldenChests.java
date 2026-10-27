@@ -131,6 +131,29 @@ public final class GoldenChests {
         return 0;
     }
 
+    /**
+     * The other half of a double chest, or null if {@code block} isn't half of one. Golems store a
+     * single chest position, so linking code uses this to count links across both halves.
+     */
+    public @Nullable Block partnerOf(Block block) {
+        if (block.getType() != Material.CHEST || !(block.getBlockData() instanceof Chest data)) {
+            return null;
+        }
+        BlockFace face = partnerFace(data.getFacing(), data.getType());
+        if (face == null) {
+            return null;
+        }
+        Block partner = block.getRelative(face);
+        if (partner.getType() == Material.CHEST
+                && partner.getBlockData() instanceof Chest other
+                && other.getFacing() == data.getFacing()
+                && other.getType() != Chest.Type.SINGLE
+                && other.getType() != data.getType()) {
+            return partner;
+        }
+        return null;
+    }
+
     // Pure rules below: plain values only, so they are unit-tested without a server.
 
     /** Golem capacity of a chest: 0 if not golden, otherwise one per half. */

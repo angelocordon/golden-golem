@@ -6,6 +6,7 @@ import java.util.Iterator;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import org.bukkit.ExplosionResult;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -80,7 +81,7 @@ public final class GoldenChestListener implements Listener {
         if (golden) {
             chests.tag(placed);
         }
-        // Safety net in case vanilla linked the neighbour before we got here: re-check next tick.
+        // Belt and braces: re-check next tick that no golden/plain double chest formed.
         services.plugin().getServer().getScheduler().runTask(services.plugin(), () -> splitMixedAround(placed));
     }
 
@@ -90,13 +91,14 @@ public final class GoldenChestListener implements Listener {
         if (!chests.isGoldenState(event.getBlockState())) {
             return;
         }
-        // Container contents aren't part of this event, so the only chest here is the block's own.
-        for (Item item : event.getItems()) {
-            ItemStack stack = item.getItemStack();
-            if (stack.getType() == Material.CHEST && !chests.isGoldenChestItem(stack)) {
-                item.setItemStack(chests.markGolden(stack));
-                return;
-            }
+        // The spilled contents are in this list too (and may hold plain chests), so only the
+        // entry OwnDrop picks is the block's own drop.
+        List<Item> items = event.getItems();
+        List<Material> types = items.stream().map(item -> item.getItemStack().getType()).toList();
+        int own = OwnDrop.index(types, event.getPlayer().getGameMode() == GameMode.CREATIVE);
+        if (own >= 0) {
+            Item item = items.get(own);
+            item.setItemStack(chests.markGolden(item.getItemStack()));
         }
     }
 
@@ -110,10 +112,13 @@ public final class GoldenChestListener implements Listener {
         breakGoldenChestsIn(event.blockList(), event.getExplosionResult());
     }
 
-    /** Withers (and anything else that turns a block to air) would drop a plain chest. */
+    /**
+     * Withers (and anything else that changes a chest into another block) would drop a plain
+     * chest. A waterlogged chest turns into water rather than air, so any change counts.
+     */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityChangeBlock(EntityChangeBlockEvent event) {
-        if (event.getTo().isAir() && chests.isGoldenChest(event.getBlock())) {
+        if (event.getTo() != Material.CHEST && chests.isGoldenChest(event.getBlock())) {
             event.setCancelled(true);
             breakAndDrop(event.getBlock());
         }
@@ -158,6 +163,7 @@ public final class GoldenChestListener implements Listener {
      */
     private void breakAndDrop(Block block) {
         ItemStack chestItem = chests.createItem();
+        boolean waterlogged = block.getBlockData() instanceof Chest data && data.isWaterlogged();
         List<ItemStack> contents = new ArrayList<>();
         if (block.getState(false) instanceof org.bukkit.block.Chest chest) {
             Component name = chest.customName();
@@ -172,7 +178,8 @@ public final class GoldenChestListener implements Listener {
             }
             half.clear();
         }
-        block.setType(Material.AIR);
+        // Like vanilla, breaking a waterlogged chest leaves its water behind.
+        block.setType(waterlogged ? Material.WATER : Material.AIR);
         World world = block.getWorld();
         Location at = block.getLocation().add(0.5, 0.5, 0.5);
         for (ItemStack stack : contents) {
@@ -195,8 +202,8 @@ public final class GoldenChestListener implements Listener {
                 || data.getType() == Chest.Type.SINGLE) {
             return;
         }
-        Block partner = block.getRelative(partnerFace(data));
-        if (!GoldenChests.mayMerge(chests.isGoldenChest(block), chests.isGoldenChest(partner))) {
+        Block partner = chests.partnerOf(block);
+        if (partner != null && !GoldenChests.mayMerge(chests.isGoldenChest(block), chests.isGoldenChest(partner))) {
             data.setType(Chest.Type.SINGLE);
             block.setBlockData(data, false);
         }
