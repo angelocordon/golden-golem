@@ -44,7 +44,7 @@ public final class GoldenGolemPlugin extends JavaPlugin {
         Movers movers = new Movers(PathMover::new);
         GolemController controller = new GolemController(getLogger(), registry, movers);
         GoldenChests chests = new GoldenChests(this);
-        Feedback feedback = new Feedback();
+        Feedback feedback = new Feedback(this);
         ChestLinker linker = new ChestLinker(registry, chests, feedback);
         Services services = new Services(this, config, registry, controller, movers, chests, linker,
                 new GolemLifecycle(), feedback);
