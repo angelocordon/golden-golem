@@ -1,8 +1,17 @@
 package dev.angelocordon.goldengolem.work;
 
+import dev.angelocordon.goldengolem.GolemConfig;
+import io.papermc.paper.datacomponent.DataComponentTypes;
+import org.bukkit.inventory.ItemStack;
+import org.jspecify.annotations.Nullable;
+
 /**
- * When a tool counts as worn out, so the golem goes home before it breaks. Pure arithmetic so the
- * caller reads max damage, damage and the unbreakable flag off the item and passes them in.
+ * When a tool counts as worn out, so the golem goes home before it breaks. The arithmetic is pure;
+ * {@link #isLow(ItemStack, GolemConfig)} and {@link #usesLeft(ItemStack)} read an item for it.
+ *
+ * <p>WORKING, DEPOSITING and the BLOCKED recheck must all use {@link #isLow(ItemStack,
+ * GolemConfig)}: if any of them judged a tool differently, the golem would loop between states
+ * (one sends it home for a new tool, the next keeps the old one and sends it back).
  */
 public final class Durability {
 
@@ -29,5 +38,42 @@ public final class Durability {
         // In vanilla a tool breaks when damage reaches maxDamage, so never let it get to its
         // last use.
         return usesLeft <= Math.max(1, minUses) || usesLeft < maxDamage * percent / 100.0;
+    }
+
+    /**
+     * True if {@code tool} is worn out under the config thresholds, read from its data components
+     * (max damage, damage, unbreakable). Null or empty is not low: the caller handles "no tool".
+     */
+    public static boolean isLow(@Nullable ItemStack tool, GolemConfig config) {
+        if (tool == null || tool.isEmpty()) {
+            return false;
+        }
+        return isLow(tool.getData(DataComponentTypes.MAX_DAMAGE),
+                tool.getDataOrDefault(DataComponentTypes.DAMAGE, 0),
+                tool.hasData(DataComponentTypes.UNBREAKABLE), config);
+    }
+
+    /**
+     * {@link #isLow(ItemStack, GolemConfig)} on plain values, so it is unit-tested. No max damage
+     * component means no durability, which is never low.
+     */
+    public static boolean isLow(@Nullable Integer maxDamage, int damage, boolean unbreakable, GolemConfig config) {
+        return isLow(maxDamage == null ? 0 : maxDamage, damage,
+                config.lowDurabilityPercent(), config.lowDurabilityUses(), unbreakable);
+    }
+
+    /** Uses before {@code tool} breaks, read from its data components. */
+    public static int usesLeft(ItemStack tool) {
+        return usesLeft(tool.getData(DataComponentTypes.MAX_DAMAGE),
+                tool.getDataOrDefault(DataComponentTypes.DAMAGE, 0),
+                tool.hasData(DataComponentTypes.UNBREAKABLE));
+    }
+
+    /** Max damage minus damage, or {@link Integer#MAX_VALUE} if it never breaks. */
+    public static int usesLeft(@Nullable Integer maxDamage, int damage, boolean unbreakable) {
+        if (maxDamage == null || unbreakable) {
+            return Integer.MAX_VALUE;
+        }
+        return maxDamage - damage;
     }
 }

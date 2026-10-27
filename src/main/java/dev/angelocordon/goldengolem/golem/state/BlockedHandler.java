@@ -1,6 +1,5 @@
 package dev.angelocordon.goldengolem.golem.state;
 
-import dev.angelocordon.goldengolem.GolemConfig;
 import dev.angelocordon.goldengolem.Services;
 import dev.angelocordon.goldengolem.golem.BlockedReason;
 import dev.angelocordon.goldengolem.golem.GoldenGolem;
@@ -8,7 +7,6 @@ import dev.angelocordon.goldengolem.golem.GolemState;
 import dev.angelocordon.goldengolem.golem.StateHandler;
 import dev.angelocordon.goldengolem.util.BlockLocation;
 import dev.angelocordon.goldengolem.work.HarvestRule;
-import io.papermc.paper.datacomponent.DataComponentTypes;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -97,7 +95,7 @@ public final class BlockedHandler implements StateHandler {
     private BlockedRecheck.Facts facts(GoldenGolem golem) {
         ItemStack tool = golem.tool();
         Material target = golem.target();
-        boolean hasUsableTool = tool != null && !tool.isEmpty() && isUsable(tool);
+        boolean hasUsableTool = BlockedRecheck.usableTool(tool, services.config());
         boolean toolFits = tool != null && !tool.isEmpty() && target != null && toolFits(tool, target);
 
         Inventory chest = chestInventory(golem.chest());
@@ -105,17 +103,6 @@ public final class BlockedHandler implements StateHandler {
 
         return new BlockedRecheck.Facts(hasUsableTool, toolFits, chest != null, chestHasRoom,
                 golem.workCenter() != null);
-    }
-
-    private boolean isUsable(ItemStack tool) {
-        GolemConfig config = services.config();
-        Integer maxDamage = tool.getData(DataComponentTypes.MAX_DAMAGE);
-        Integer damage = tool.getData(DataComponentTypes.DAMAGE);
-        return BlockedRecheck.usableTool(true,
-                maxDamage == null ? 0 : maxDamage,
-                damage == null ? 0 : damage,
-                tool.hasData(DataComponentTypes.UNBREAKABLE),
-                config.lowDurabilityPercent(), config.lowDurabilityUses());
     }
 
     /**
