@@ -20,6 +20,14 @@ public interface Mover {
     /** True while heading somewhere and not yet within {@code reach} of the target. */
     boolean isMoving();
 
+    /**
+     * True if the last attempt to reach the current target gave up: no path, or no path that gets
+     * any closer, or stuck on the same path. {@link #isMoving()} is false meanwhile, and
+     * {@link #moveTo} returns false for that target until it changes or a short cooldown passes.
+     * Handlers use this to block with UNREACHABLE. False after {@link #stop()}.
+     */
+    boolean failed();
+
     /** True if the golem is within {@code distance} blocks of {@code target}. */
     boolean isNear(Location target, double distance);
 

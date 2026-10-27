@@ -7,12 +7,14 @@ import dev.angelocordon.goldengolem.golem.StateHandler;
 import dev.angelocordon.goldengolem.golem.movement.Mover;
 import java.util.UUID;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Keeps the golem near its owner. Never mines. With the owner offline or in another world it
- * stands still and stays FOLLOWING, so it picks up again when the owner comes back.
+ * Keeps the golem near its owner. Never mines. Teleports to the owner when far away or in another
+ * world, but only onto a safe spot; otherwise it waits. With the owner offline it stands still
+ * and stays FOLLOWING, so it picks up again when the owner comes back.
  */
 public final class FollowingHandler implements StateHandler {
 
@@ -22,7 +24,8 @@ public final class FollowingHandler implements StateHandler {
     static final double STOP_DISTANCE = 2.0;
     /** Teleport to the owner when farther than this. */
     static final double TELEPORT_DISTANCE = 24.0;
-    private static final double FOLLOW_SPEED = 1.0;
+    /** About 0.25 blocks/tick for a copper golem, a bit faster than a walking player. */
+    private static final double FOLLOW_SPEED = 1.7;
 
     /** What to do this tick, from the distance to the owner. */
     enum Action {
@@ -53,20 +56,27 @@ public final class FollowingHandler implements StateHandler {
     public GolemState tick(GoldenGolem golem) {
         Mover mover = services.movers().of(golem);
         Player owner = onlineOwner(golem);
-        Location here = golem.entity().getLocation();
-        if (owner == null || !owner.getWorld().equals(here.getWorld())) {
+        if (owner == null) {
             mover.stop();
             return GolemState.FOLLOWING;
         }
+        Location here = golem.entity().getLocation();
         Location ownerLocation = owner.getLocation();
+        if (!owner.getWorld().equals(here.getWorld())) {
+            mover.stop();
+            if (canTeleportTo(owner)) {
+                golem.entity().teleport(ownerLocation);
+            }
+            return GolemState.FOLLOWING;
+        }
         switch (decide(here.distanceSquared(ownerLocation))) {
             case TELEPORT -> {
                 if (canTeleportTo(owner)) {
                     mover.stop();
                     golem.entity().teleport(ownerLocation);
                 } else {
-                    // Owner is mid-air (flying, gliding, falling): walking after them beats
-                    // dropping the golem from the sky. It teleports once the owner lands.
+                    // Not a safe spot (flying, falling, lava...): walking after the owner beats
+                    // dropping the golem into danger. It teleports once the owner is somewhere safe.
                     mover.moveTo(ownerLocation, FOLLOW_SPEED);
                 }
             }
@@ -95,6 +105,23 @@ public final class FollowingHandler implements StateHandler {
         return Action.KEEP;
     }
 
+    /**
+     * Whether the owner's spot is safe to drop the golem onto: owner alive, standing on solid
+     * ground, not flying, gliding or riding, and no lava or fire at their feet. Pure, so it is
+     * unit-tested.
+     */
+    static boolean isSafeTeleport(boolean dead, boolean flying, boolean gliding, boolean inVehicle,
+            boolean inLava, Material atFeet, boolean solidBelow) {
+        boolean hazardAtFeet = atFeet == Material.LAVA || atFeet == Material.FIRE || atFeet == Material.SOUL_FIRE;
+        return !dead && !flying && !gliding && !inVehicle && !inLava && !hazardAtFeet && solidBelow;
+    }
+
+    private static boolean canTeleportTo(Player owner) {
+        Location feet = owner.getLocation();
+        return isSafeTeleport(owner.isDead(), owner.isFlying(), owner.isGliding(), owner.isInsideVehicle(),
+                owner.isInLava(), feet.getBlock().getType(), feet.clone().subtract(0, 0.5, 0).getBlock().isSolid());
+    }
+
     private @Nullable Player onlineOwner(GoldenGolem golem) {
         UUID ownerId = golem.owner();
         if (ownerId == null) {
@@ -102,11 +129,5 @@ public final class FollowingHandler implements StateHandler {
         }
         Player owner = services.plugin().getServer().getPlayer(ownerId);
         return owner != null && owner.isOnline() ? owner : null;
-    }
-
-    /** Only onto solid ground, so the golem isn't dropped from a height and hurt. */
-    private static boolean canTeleportTo(Player owner) {
-        return !owner.isFlying() && !owner.isGliding() && !owner.isInsideVehicle()
-                && owner.getLocation().subtract(0, 0.5, 0).getBlock().isSolid();
     }
 }

@@ -11,8 +11,9 @@ final class PathSteps {
 
     /**
      * Ground friction per tick for a mob on a normal block (block friction 0.6 times air drag
-     * 0.91). A walking mob's steady-state speed is its movement-speed attribute divided by
-     * {@code 1 - GROUND_FRICTION}, which is what "speed 1.0 = normal walking speed" maps to.
+     * 0.91). A vanilla mob walking with movement speed {@code s = attribute × modifier} gets an
+     * acceleration of {@code s²} per tick (the move control sets both the speed and the forward
+     * input to {@code s}), so its steady-state speed is {@code s² / (1 - GROUND_FRICTION)}.
      */
     static final double GROUND_FRICTION = 0.6 * 0.91;
 
@@ -37,9 +38,14 @@ final class PathSteps {
         }
     }
 
-    /** Blocks per tick for a mob with this movement-speed attribute at a speed multiplier. */
+    /**
+     * Blocks per tick for a mob with this movement-speed attribute at a speed multiplier, matching
+     * vanilla: speed 1.0 is the vanilla walk (about 0.088 blocks/tick for a copper golem). Like
+     * vanilla, the result grows with the square of the multiplier.
+     */
     static double blocksPerTick(double movementSpeedAttribute, double speed) {
-        double perTick = movementSpeedAttribute * speed / (1 - GROUND_FRICTION);
+        double s = Math.max(0, movementSpeedAttribute * speed);
+        double perTick = s * s / (1 - GROUND_FRICTION);
         return Math.max(0, Math.min(MAX_BLOCKS_PER_TICK, perTick));
     }
 
@@ -76,14 +82,5 @@ final class PathSteps {
      */
     static float yaw(double dx, double dz) {
         return (float) Math.toDegrees(Math.atan2(-dx, dz));
-    }
-
-    /**
-     * Whether a path that can't reach its target is still worth walking: its end must be at
-     * least half a block closer to the target than the golem is now. Paths are capped by the
-     * mob's follow range, so long trips come back partial and get chained.
-     */
-    static boolean makesProgress(double hereToTarget, double finalPointToTarget) {
-        return finalPointToTarget + 0.5 < hereToTarget;
     }
 }

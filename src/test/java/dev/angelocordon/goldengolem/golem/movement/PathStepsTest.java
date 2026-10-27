@@ -11,17 +11,21 @@ class PathStepsTest {
     private static final double EPS = 1e-9;
 
     @Test
-    void normalSpeedMatchesVanillaWalkingSpeed() {
-        // A player-like 0.1 attribute walks about 0.22 blocks per tick (4.3 blocks/s) in vanilla.
-        assertEquals(0.22, PathSteps.blocksPerTick(0.1, 1.0), 0.005);
+    void normalSpeedMatchesVanillaCopperGolemWalk() {
+        // Copper golem movement_speed 0.2: (0.2)^2 / (1 - 0.546) = 0.0881 blocks/tick.
+        assertEquals(0.0881, PathSteps.blocksPerTick(0.2, 1.0), 0.0005);
     }
 
     @Test
-    void speedMultiplierScalesLinearly() {
-        double normal = PathSteps.blocksPerTick(0.1, 1.0);
+    void speedGrowsWithSquareOfMultiplierLikeVanilla() {
+        assertEquals(PathSteps.blocksPerTick(0.2, 1.0) * 4, PathSteps.blocksPerTick(0.2, 2.0), EPS);
+        assertEquals(0.0, PathSteps.blocksPerTick(0.2, 0.0), EPS);
+    }
 
-        assertEquals(normal * 1.5, PathSteps.blocksPerTick(0.1, 1.5), EPS);
-        assertEquals(0.0, PathSteps.blocksPerTick(0.1, 0.0), EPS);
+    @Test
+    void followSpeedKeepsUpWithAWalkingPlayer() {
+        // A walking player covers about 0.216 blocks/tick.
+        assertTrue(PathSteps.blocksPerTick(0.2, 1.7) > 0.216);
     }
 
     @Test
@@ -89,12 +93,5 @@ class PathStepsTest {
         assertEquals(90f, PathSteps.yaw(-1, 0), 1e-4);
         assertEquals(-90f, PathSteps.yaw(1, 0), 1e-4);
         assertEquals(180f, Math.abs(PathSteps.yaw(0, -1)), 1e-4);
-    }
-
-    @Test
-    void partialPathIsWorthWalkingOnlyIfItGetsCloser() {
-        assertTrue(PathSteps.makesProgress(20.0, 5.0));
-        assertFalse(PathSteps.makesProgress(5.0, 5.0));
-        assertFalse(PathSteps.makesProgress(5.0, 4.8));
     }
 }
