@@ -122,6 +122,21 @@ public final class StorageMerge {
         return true;
     }
 
+    /**
+     * True if {@link #add} would leave nothing over. Merges into a copy of {@code slots}, so
+     * the real storage is untouched: used to decide before breaking a block whether its whole
+     * drop fits, since multi-item drops (lapis, redstone, Fortune) can overflow a "room for one
+     * more" check.
+     */
+    public static <T> boolean fitsAll(@Nullable T[] slots, Collection<T> items, Stacks<T> stacks) {
+        return add(slots.clone(), items, stacks).isEmpty();
+    }
+
+    /** {@link #fitsAll(Object[], Collection, Stacks)} for Bukkit item stacks. */
+    public static boolean fitsAll(@Nullable ItemStack[] slots, Collection<ItemStack> items) {
+        return fitsAll(slots, items, ITEMS);
+    }
+
     /** {@link #hasRoomForAll(Object[], Collection, Stacks)} for Bukkit item stacks. */
     public static boolean hasRoomForAll(@Nullable ItemStack[] slots, Collection<ItemStack> items) {
         return hasRoomForAll(slots, items, ITEMS);

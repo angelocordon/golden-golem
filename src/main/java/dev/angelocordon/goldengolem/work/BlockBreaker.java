@@ -74,22 +74,30 @@ public final class BlockBreaker {
     }
 
     /**
-     * Breaks the block as if mined with {@code tool} by {@code breaker} and returns its drops
-     * (Fortune and Silk Touch apply) instead of spawning them. Plays the vanilla break particles
-     * and sound. A waterlogged block leaves its water behind, as in vanilla.
+     * What breaking the block with {@code tool} by {@code breaker} would drop (Fortune and Silk
+     * Touch apply). Rolled once, before anything is broken, so the caller can check it fits and
+     * then hand the same list to storage after {@link #breakBlock}.
      */
-    public static List<ItemStack> breakBlock(Block block, ItemStack tool, Entity breaker) {
+    public static List<ItemStack> dropsOf(Block block, ItemStack tool, Entity breaker) {
         List<ItemStack> drops = new ArrayList<>();
         for (ItemStack drop : block.getDrops(tool, breaker)) {
             if (!drop.isEmpty()) {
                 drops.add(drop);
             }
         }
+        return drops;
+    }
+
+    /**
+     * Breaks the block without spawning drops (the caller took them from {@link #dropsOf}).
+     * Plays the vanilla break particles and sound. A waterlogged block leaves its water behind,
+     * as in vanilla.
+     */
+    public static void breakBlock(Block block) {
         BlockData data = block.getBlockData();
         boolean water = data instanceof Waterlogged waterlogged && waterlogged.isWaterlogged();
         block.getWorld().playEffect(block.getLocation(), Effect.DESTROY_BLOCK_WITH_SOUND, data);
         block.setType(water ? Material.WATER : Material.AIR, true);
-        return drops;
     }
 
     /**

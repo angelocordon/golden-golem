@@ -1,7 +1,6 @@
 package dev.angelocordon.goldengolem.work;
 
 import dev.angelocordon.goldengolem.util.BlockPos;
-import java.util.List;
 
 /**
  * Whether breaking a block is safe for the golem. Pure, over a {@link KindProbe} that classifies
@@ -11,7 +10,10 @@ import java.util.List;
  *   <li>Lava next to the target (any of its 6 neighbours) would flow into the hole: unsafe.
  *   <li>A target directly under the golem's feet drops it into the hole; a drop of more than
  *       {@link #MAX_SAFE_DROP} blocks (where vanilla fall damage starts), or onto lava, is unsafe.
- *       Water below breaks the fall. Targets beside or above the golem never drop it.
+ *       Water below breaks the fall. Targets beside the golem never drop it.
+ *   <li>A target in the golem's own column, above its feet, with sand or gravel on top would let
+ *       that block fall through the hole onto the golem and bury it: unsafe. The golem can't
+ *       step aside in time (its mover treats 1-block moves as already there), so it never digs it.
  * </ul>
  */
 public final class HazardCheck {
@@ -45,7 +47,18 @@ public final class HazardCheck {
 
     /** True if the golem standing with its feet in {@code feet} may break {@code target}. */
     public static boolean isSafe(BlockPos target, BlockPos feet, KindProbe probe) {
-        return !lavaNextTo(target, probe) && !dropsTooFar(target, feet, probe);
+        return !lavaNextTo(target, probe)
+                && !dropsTooFar(target, feet, probe)
+                && !buriesGolem(target, feet, probe);
+    }
+
+    /**
+     * True if the target is above the golem's feet in the same column and a falling block sits on
+     * it: once the target is gone that block falls down the column into the golem's own space.
+     */
+    static boolean buriesGolem(BlockPos target, BlockPos feet, KindProbe probe) {
+        return target.x() == feet.x() && target.z() == feet.z() && target.y() > feet.y()
+                && hasFallingAbove(target, probe);
     }
 
     /** True if any of the target's 6 neighbours is lava. */
@@ -85,32 +98,5 @@ public final class HazardCheck {
     /** True if the block above the target will fall into the hole once the target is gone. */
     public static boolean hasFallingAbove(BlockPos target, KindProbe probe) {
         return probe.kindAt(target.x(), target.y() + 1, target.z()) == BlockKind.FALLING;
-    }
-
-    /**
-     * Feet positions one block away from {@code feet}, best first, for stepping clear of blocks
-     * about to fall: straight away from the target, then the two sideways spots, then toward it.
-     * When the target is straight above or below, it starts with +x.
-     */
-    public static List<BlockPos> stepBackSpots(BlockPos target, BlockPos feet) {
-        int offX = feet.x() - target.x();
-        int offZ = feet.z() - target.z();
-        int ax;
-        int az;
-        if (offX == 0 && offZ == 0) {
-            ax = 1;
-            az = 0;
-        } else if (Math.abs(offX) >= Math.abs(offZ)) {
-            ax = Integer.signum(offX);
-            az = 0;
-        } else {
-            ax = 0;
-            az = Integer.signum(offZ);
-        }
-        return List.of(
-                feet.offset(ax, 0, az),
-                feet.offset(-az, 0, ax),
-                feet.offset(az, 0, -ax),
-                feet.offset(-ax, 0, -az));
     }
 }

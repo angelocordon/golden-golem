@@ -141,6 +141,19 @@ public final class HarvestRule {
                 && !block.getDrops(tool).isEmpty();
     }
 
+    /**
+     * True if {@code tool} is the right kind for {@code target} ({@link #toolFits}) and a high
+     * enough tier to harvest it (a wooden pickaxe fails on diamond ore). The block-free version
+     * of {@link #canHarvest}, without its drops check. WORKING and BLOCKED both use it so they
+     * agree and a golem never bounces between the two. Needs a running server (block data).
+     */
+    public static boolean toolCanHarvest(ItemStack tool, Material target) {
+        return !tool.isEmpty()
+                && toolFits(tool.getType(), target)
+                && target.isBlock()
+                && target.createBlockData().isPreferredTool(tool);
+    }
+
     private static boolean isWood(Material target) {
         String name = target.name();
         if (name.endsWith("_STEM")) {

@@ -1,13 +1,11 @@
 package dev.angelocordon.goldengolem.work;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.angelocordon.goldengolem.util.BlockPos;
 import dev.angelocordon.goldengolem.work.HazardCheck.BlockKind;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -103,25 +101,36 @@ class HazardCheckTest {
     }
 
     @Test
-    void stepsBackAwayFromTheTargetFirst() {
-        List<BlockPos> spots = HazardCheck.stepBackSpots(TARGET, BESIDE);
-        assertEquals(new BlockPos(2, 64, 0), spots.get(0));
-        assertEquals(new BlockPos(0, 64, 0), spots.get(3));
-        assertEquals(4, spots.stream().distinct().count());
+    void fallingBlockOnATargetAboveTheGolemIsUnsafe() {
+        // Target at head height, golem in the same column: the sand would land on it.
+        BlockPos feet = new BlockPos(0, 63, 0);
+        FakeWorld world = new FakeWorld().set(0, 65, 0, BlockKind.FALLING);
+        assertFalse(HazardCheck.isSafe(TARGET, feet, world));
     }
 
     @Test
-    void stepsBackAlongTheLongerAxis() {
-        List<BlockPos> spots = HazardCheck.stepBackSpots(TARGET, new BlockPos(1, 63, -2));
-        assertEquals(new BlockPos(1, 63, -3), spots.get(0));
+    void fallingBlockOnATargetFurtherAboveTheGolemIsUnsafe() {
+        BlockPos feet = new BlockPos(0, 62, 0);
+        FakeWorld world = new FakeWorld().set(0, 65, 0, BlockKind.FALLING);
+        assertFalse(HazardCheck.isSafe(TARGET, feet, world));
     }
 
     @Test
-    void stepsBackSomewhereWhenTheTargetIsOverhead() {
-        List<BlockPos> spots = HazardCheck.stepBackSpots(TARGET, new BlockPos(0, 63, 0));
-        assertEquals(4, spots.stream().distinct().count());
-        for (BlockPos spot : spots) {
-            assertEquals(1, spot.distanceSquared(new BlockPos(0, 63, 0)));
-        }
+    void targetAboveTheGolemWithoutFallingBlocksIsSafe() {
+        assertTrue(HazardCheck.isSafe(TARGET, new BlockPos(0, 63, 0), new FakeWorld()));
+    }
+
+    @Test
+    void fallingBlockOnATargetBesideTheGolemIsSafe() {
+        FakeWorld world = new FakeWorld().set(0, 65, 0, BlockKind.FALLING);
+        assertTrue(HazardCheck.isSafe(TARGET, BESIDE, world));
+        assertTrue(HazardCheck.isSafe(TARGET, new BlockPos(1, 63, 0), world));
+    }
+
+    @Test
+    void fallingBlockOnATargetUnderTheGolemIsSafe() {
+        // The golem stands on the target; the sand above it is the golem's own space.
+        FakeWorld world = new FakeWorld().set(0, 65, 0, BlockKind.FALLING);
+        assertTrue(HazardCheck.isSafe(TARGET, ON_TOP, world));
     }
 }

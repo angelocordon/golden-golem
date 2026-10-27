@@ -129,6 +129,34 @@ class StorageMergeTest {
     }
 
     @Test
+    void fitsAllWhenTheWholeDropFits() {
+        Item[] slots = {cobble(60), flint(64)};
+        assertTrue(StorageMerge.fitsAll(slots, List.of(cobble(4)), STACKS));
+    }
+
+    @Test
+    void doesNotFitAllWhenAMultiItemDropOverflowsTheLastStack() {
+        // One more would fit, five more would not: the old room-for-one check passed this.
+        Item[] slots = {cobble(60), flint(64)};
+        assertTrue(StorageMerge.hasRoomForAll(slots, List.of(cobble(5)), STACKS));
+        assertFalse(StorageMerge.fitsAll(slots, List.of(cobble(5)), STACKS));
+    }
+
+    @Test
+    void fitsAllChecksTheDropsTogether() {
+        Item[] slots = {cobble(60), flint(64), null};
+        assertTrue(StorageMerge.fitsAll(slots, List.of(cobble(4), cobble(64)), STACKS));
+        assertFalse(StorageMerge.fitsAll(slots, List.of(cobble(70), cobble(64)), STACKS));
+    }
+
+    @Test
+    void fitsAllLeavesTheStorageUntouched() {
+        Item[] slots = {cobble(60), null};
+        StorageMerge.fitsAll(slots, List.of(cobble(30)), STACKS);
+        assertArrayEquals(new Item[] {cobble(60), null}, slots);
+    }
+
+    @Test
     void reportsEmptySlotsAndEmptiness() {
         assertTrue(StorageMerge.isEmpty(new Item[2]));
         assertFalse(StorageMerge.isEmpty(new Item[] {null, cobble(1)}));

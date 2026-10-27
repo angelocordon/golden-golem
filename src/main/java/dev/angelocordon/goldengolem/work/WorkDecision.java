@@ -20,7 +20,7 @@ public enum WorkDecision {
      * Checked every tick before doing any work. A full storage goes home before the tool checks,
      * so a golem whose tool was taken still delivers what it carries.
      *
-     * @param toolFitsTarget {@code HarvestRule.toolFits(tool, target)}; false without a target
+     * @param toolFitsTarget {@code HarvestRule.toolCanHarvest(tool, target)} (kind and tier); false without a target
      * @param toolLow {@code Durability.isLow} with the config thresholds
      */
     public static WorkDecision check(boolean hasWorkCenter, boolean storageFull, boolean hasTool,

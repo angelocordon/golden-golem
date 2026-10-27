@@ -67,12 +67,4 @@ public final class WorldProbes {
                 && world.isChunkLoaded(pos.x() >> 4, pos.z() >> 4)
                 && world.getType(pos.x(), pos.y(), pos.z()) == target;
     }
-
-    /** True if a golem can stand with its feet in {@code feet}: room there and solid ground below. */
-    public static boolean isStandable(World world, BlockPos feet) {
-        HazardCheck.KindProbe kinds = kinds(world);
-        HazardCheck.BlockKind floor = kinds.kindAt(feet.x(), feet.y() - 1, feet.z());
-        return kinds.kindAt(feet.x(), feet.y(), feet.z()) == HazardCheck.BlockKind.AIR
-                && (floor == HazardCheck.BlockKind.SOLID || floor == HazardCheck.BlockKind.FALLING);
-    }
 }

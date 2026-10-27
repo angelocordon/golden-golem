@@ -40,9 +40,8 @@ import org.jspecify.annotations.Nullable;
  *       blacklisted and the scan goes on.
  *   <li><b>Break</b> it over time at the vanilla player speed, with crack stages, after the
  *       hazard check. The owner's {@code BlockBreakEvent} decides whether protection allows it.
- *       Drops go into storage; the tool wears by one use.
- *   <li><b>Settle</b>, only if sand or gravel sat on the broken block: step back a block and
- *       wait for it to land, then scan on.
+ *       Drops go into storage; the tool wears by one use. If the whole drop won't fit, the
+ *       block is left alone and the golem goes home first.
  * </ol>
  *
  * <p>Every tick first runs {@link WorkDecision#check}: storage full or tool worn goes RETURNING,
@@ -73,15 +72,13 @@ public final class WorkingHandler implements StateHandler {
     static final long BLACKLIST_TICKS = 2 * 60 * 20;
     /** Re-read the tool this often, to notice menu edits. */
     private static final int TOOL_REFRESH_TICKS = 20;
-    /** Wait this long for sand or gravel to land after breaking the block under it. */
-    private static final int SETTLE_TICKS = 20;
     /** Swing the arm this often while breaking, roughly a player's swing rate. */
     private static final int SWING_INTERVAL_TICKS = 5;
     /** Drop stale entries (golems that unloaded while working) this often. */
     private static final int PRUNE_INTERVAL_TICKS = 1200;
     private static final double WALK_SPEED = 1.0;
 
-    private enum Phase { SCAN, WALK, BREAK, SETTLE }
+    private enum Phase { SCAN, WALK, BREAK }
 
     /** One golem's progress in this state. */
     private static final class Work {
@@ -93,7 +90,6 @@ public final class WorkingHandler implements StateHandler {
         int breakTicks;
         int breakTotal;
         int crackStage;
-        long settleUntil;
         @Nullable ItemStack tool;
         long toolDueAt;
         boolean toolFits;
@@ -155,13 +151,22 @@ public final class WorkingHandler implements StateHandler {
         }
         World world = golem.entity().getWorld();
         if (!world.getUID().equals(center.world())) {
-            return StateHandler.block(golem, BlockedReason.UNREACHABLE);
+            // Walking can't fix this, so not UNREACHABLE (which the recheck retries as if it could).
+            return StateHandler.block(golem, BlockedReason.TOO_FAR);
+        }
+        if (onlineOwner(golem) == null) {
+            // Protection is checked against the owner, so wait for them rather than blacklisting
+            // the area block by block. Resumes by itself when they log back in.
+            Mover mover = services.movers().of(golem);
+            if (mover.isMoving()) {
+                mover.stop();
+            }
+            return GolemState.WORKING;
         }
         return switch (w.phase) {
             case SCAN -> scan(golem, w, world, center, now);
             case WALK -> walk(golem, w, world, now);
             case BREAK -> breakTick(golem, w, world, now);
-            case SETTLE -> settle(golem, w, now);
         };
     }
 
@@ -183,7 +188,7 @@ public final class WorkingHandler implements StateHandler {
         Material targetType = w.targetType;
         w.tool = tool;
         w.toolDueAt = now + TOOL_REFRESH_TICKS;
-        w.toolFits = tool != null && targetType != null && HarvestRule.toolFits(tool.getType(), targetType);
+        w.toolFits = tool != null && targetType != null && HarvestRule.toolCanHarvest(tool, targetType);
         w.toolLow = Durability.isLow(tool, services.config());
     }
 
@@ -341,7 +346,19 @@ public final class WorkingHandler implements StateHandler {
             return apply(golem, decision);
         }
         Player owner = onlineOwner(golem);
-        if (!HarvestRule.canHarvest(block, tool) || owner == null || !BlockBreaker.ownerMayBreak(block, owner)) {
+        if (!HarvestRule.canHarvest(block, tool) || owner == null) {
+            blacklist(w, target, now);
+            dropTarget(golem, w);
+            return GolemState.WORKING;
+        }
+        // Roll the drops first: if they won't all fit, leave the block and go home to empty out.
+        List<ItemStack> drops = BlockBreaker.dropsOf(block, tool, entity);
+        if (!StorageMerge.fitsAll(golem.storage(), drops)) {
+            w.storageFull = true;
+            dropTarget(golem, w);
+            return GolemState.RETURNING;
+        }
+        if (!BlockBreaker.ownerMayBreak(block, owner)) {
             blacklist(w, target, now);
             dropTarget(golem, w);
             return GolemState.WORKING;
@@ -351,12 +368,11 @@ public final class WorkingHandler implements StateHandler {
             dropTarget(golem, w);
             return GolemState.WORKING;
         }
-        boolean fallingAbove = HazardCheck.hasFallingAbove(target, WorldProbes.kinds(world));
-
-        List<ItemStack> drops = BlockBreaker.breakBlock(block, tool, entity);
+        BlockBreaker.breakBlock(block);
         @Nullable ItemStack[] storage = golem.storage();
         List<ItemStack> leftovers = StorageMerge.add(storage, drops);
         golem.setStorage(storage);
+        // Defensive: the fit was checked above, so this only runs if a listener filled storage.
         for (ItemStack leftover : leftovers) {
             world.dropItem(entity.getLocation(), leftover);
         }
@@ -366,34 +382,8 @@ public final class WorkingHandler implements StateHandler {
         w.storageFull = !leftovers.isEmpty() || !StorageMerge.hasRoomForAll(storage, drops);
 
         w.target = null;
-        if (fallingAbove) {
-            startSettle(golem, w, world, target, now);
-        } else {
-            w.phase = Phase.SCAN;
-        }
+        w.phase = Phase.SCAN;
         return apply(golem, decide(true, w));
-    }
-
-    /** Steps one block clear of the hole so the falling block can't land on the golem. */
-    private void startSettle(GoldenGolem golem, Work w, World world, BlockPos broken, long now) {
-        BlockPos feet = BlockPos.of(golem.entity().getLocation());
-        for (BlockPos spot : HazardCheck.stepBackSpots(broken, feet)) {
-            if (!spot.equals(broken) && WorldProbes.isStandable(world, spot)) {
-                services.movers().of(golem).moveTo(
-                        new Location(world, spot.x() + 0.5, spot.y(), spot.z() + 0.5), WALK_SPEED);
-                break;
-            }
-        }
-        w.phase = Phase.SETTLE;
-        w.settleUntil = now + SETTLE_TICKS;
-    }
-
-    private GolemState settle(GoldenGolem golem, Work w, long now) {
-        if (now >= w.settleUntil) {
-            services.movers().of(golem).stop();
-            w.phase = Phase.SCAN;
-        }
-        return GolemState.WORKING;
     }
 
     /** Clears the crack overlay if a break was in progress. */
