@@ -1,7 +1,10 @@
 package dev.angelocordon.goldengolem.menu;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.angelocordon.goldengolem.golem.GolemState;
 import org.junit.jupiter.api.Test;
 
 class StayDecisionTest {
@@ -58,5 +61,29 @@ class StayDecisionTest {
     void ignoresDistanceWhenNoChestIsLinked() {
         assertEquals(StayDecision.WORK,
                 StayDecision.decide(true, true, false, Double.POSITIVE_INFINITY, MAX));
+    }
+
+    @Test
+    void rechecksAWaitingGolemWhenItsToolOrTargetChanges() {
+        assertTrue(StayDecision.shouldRecheck(GolemState.IDLE, true, true));
+    }
+
+    @Test
+    void doesNotRecheckWithoutAChange() {
+        assertFalse(StayDecision.shouldRecheck(GolemState.IDLE, true, false));
+    }
+
+    @Test
+    void doesNotRecheckAGolemThatWasNeverToldToStay() {
+        assertFalse(StayDecision.shouldRecheck(GolemState.IDLE, false, true));
+    }
+
+    @Test
+    void doesNotRecheckOutsideIdle() {
+        for (GolemState state : GolemState.values()) {
+            if (state != GolemState.IDLE) {
+                assertFalse(StayDecision.shouldRecheck(state, true, true), state.name());
+            }
+        }
     }
 }

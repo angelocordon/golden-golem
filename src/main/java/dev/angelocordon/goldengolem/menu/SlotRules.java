@@ -76,19 +76,38 @@ public final class SlotRules {
         return ToolKind.of(item).isPresent();
     }
 
-    /**
-     * The target slot takes a block the current tool is for. With no tool there's nothing to
-     * check against, so it takes nothing. {@code candidateIsBlock} is passed in because
-     * {@link Material#isBlock()} needs a server.
-     */
-    public static boolean acceptsTarget(@Nullable Material tool, Material candidate, boolean candidateIsBlock) {
-        return acceptsTarget(tool, candidate, candidateIsBlock, HarvestRule::toolFits);
+    /** Why the target slot would refuse an item, or {@link #OK}. */
+    public enum TargetCheck {
+        OK,
+        /** The tool slot is empty (or holds something that isn't a tool): nothing to check against. */
+        NO_TOOL,
+        /** The item has a custom name, lore or other data that a saved Material can't keep. */
+        NOT_PLAIN,
+        /** Not a block, or not one the tool is for. */
+        DOES_NOT_FIT
     }
 
-    /** {@link #acceptsTarget(Material, Material, boolean)} with the fit rule injected, for tests. */
-    static boolean acceptsTarget(@Nullable Material tool, Material candidate, boolean candidateIsBlock,
-            BiPredicate<Material, Material> toolFits) {
-        return tool != null && acceptsTool(tool) && candidateIsBlock && toolFits.test(tool, candidate);
+    /**
+     * Checks an item for the target slot. The golem saves only the target's Material, so only a
+     * plain block item goes in; anything carrying data is refused rather than silently stripped.
+     * {@code candidateIsBlock} and {@code candidateIsPlain} are passed in because computing them
+     * needs a server.
+     */
+    public static TargetCheck checkTarget(@Nullable Material tool, Material candidate, boolean candidateIsBlock,
+            boolean candidateIsPlain) {
+        return checkTarget(tool, candidate, candidateIsBlock, candidateIsPlain, HarvestRule::toolFits);
+    }
+
+    /** {@link #checkTarget(Material, Material, boolean, boolean)} with the fit rule injected, for tests. */
+    static TargetCheck checkTarget(@Nullable Material tool, Material candidate, boolean candidateIsBlock,
+            boolean candidateIsPlain, BiPredicate<Material, Material> toolFits) {
+        if (tool == null || !acceptsTool(tool)) {
+            return TargetCheck.NO_TOOL;
+        }
+        if (!candidateIsPlain) {
+            return TargetCheck.NOT_PLAIN;
+        }
+        return candidateIsBlock && toolFits.test(tool, candidate) ? TargetCheck.OK : TargetCheck.DOES_NOT_FIT;
     }
 
     /**

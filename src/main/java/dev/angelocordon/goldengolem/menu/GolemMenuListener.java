@@ -8,10 +8,12 @@ import dev.angelocordon.goldengolem.golem.GoldenGolem;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
@@ -19,6 +21,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
@@ -34,10 +37,11 @@ import org.jspecify.annotations.Nullable;
  * Opens the equipment menu on right-click, handles Follow/Stay (menu item and sneak +
  * right-click), and enforces the menu's slot rules.
  *
- * <p>Open menus sync to the golem at the start of every tick that follows a click (before the
- * controller ticks golems) and at the end of every tick (to show the golem's own changes). Menus
- * close, after a final sync, before the golem dies, unloads or the plugin disables, so items are
- * never in the menu and in the golem's death drops or saved data at once.
+ * <p>Follows {@link GolemMenu}'s write/refresh contract: pending edits are written at tick start
+ * (before the controller), the view is refreshed at tick end and after every write made here
+ * between ticks (toggle, close). Menus close, after writing pending edits, before the golem
+ * dies, unloads, changes world or the plugin disables, so items are never in the menu and in
+ * the golem's death drops or saved data at once.
  */
 public final class GolemMenuListener implements Listener {
 
@@ -82,7 +86,8 @@ public final class GolemMenuListener implements Listener {
         }
     }
 
-    @EventHandler(ignoreCancelled = true)
+    /** HIGHEST so no later plugin can un-cancel a denied click on a control slot. */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onClick(InventoryClickEvent event) {
         GolemMenu menu = menuOf(event.getView().getTopInventory());
         if (menu == null) {
@@ -105,11 +110,10 @@ public final class GolemMenuListener implements Listener {
             case ALLOW, DENY -> {
             }
         }
-        // The click was cancelled but the server state changed; resend it so the client agrees.
-        services.plugin().getServer().getScheduler().runTask(services.plugin(), player::updateInventory);
+        // No resend needed: Paper broadcasts the changed slots and cursor after a denied click.
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDrag(InventoryDragEvent event) {
         GolemMenu menu = menuOf(event.getView().getTopInventory());
         if (menu == null) {
@@ -128,20 +132,31 @@ public final class GolemMenuListener implements Listener {
         if (menu == null) {
             return;
         }
-        menu.sync();
+        writePending(menu);
         boolean othersViewing = menu.getInventory().getViewers().stream()
                 .anyMatch(viewer -> !viewer.equals(event.getPlayer()));
-        if (!othersViewing) {
+        if (othersViewing) {
+            menu.refresh();
+        } else {
             menus.remove(menu.golem().id(), menu);
         }
     }
 
-    /** Runs before the scheduler, so menu edits land before the controller ticks the golem. */
+    /**
+     * Runs before the scheduler, so menu edits land before the controller ticks the golem. A
+     * waiting golem whose tool or target changed re-runs the Stay decision.
+     */
     @EventHandler
     public void onTickStart(ServerTickStartEvent event) {
         for (GolemMenu menu : List.copyOf(menus.values())) {
-            if (menu.isDirty() && menu.golem().isValid()) {
-                menu.sync();
+            GoldenGolem golem = menu.golem();
+            if (!menu.isDirty() || !golem.isValid()) {
+                continue;
+            }
+            boolean equipmentChanged = menu.write();
+            if (StayDecision.shouldRecheck(golem.state(), golem.workCenter() != null, equipmentChanged)) {
+                followStay.recheck(golem, firstPlayer(menu));
+                menu.refresh();
             }
         }
     }
@@ -154,12 +169,12 @@ public final class GolemMenuListener implements Listener {
                 close(menu);
                 continue;
             }
-            menu.sync();
-            menu.refreshControls();
+            writePending(menu);
+            menu.refresh();
         }
     }
 
-    /** LOWEST so the menu is closed and synced before anything reads the golem's death drops. */
+    /** LOWEST so pending edits are written and the menu closed before anything reads the golem's death drops. */
     @EventHandler(priority = EventPriority.LOWEST)
     public void onDeath(EntityDeathEvent event) {
         closeFor(event.getEntity());
@@ -176,13 +191,25 @@ public final class GolemMenuListener implements Listener {
         }
     }
 
+    /**
+     * A golem changing world is copied from its saved data before the old entity goes away, so
+     * close (writing pending edits) while the old entity is still the live one.
+     */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onTeleport(EntityTeleportEvent event) {
+        Location to = event.getTo();
+        if (to != null && !Objects.equals(to.getWorld(), event.getFrom().getWorld())) {
+            closeFor(event.getEntity());
+        }
+    }
+
     /** Backstop for any other removal. */
     @EventHandler(priority = EventPriority.LOWEST)
     public void onRemove(EntityRemoveFromWorldEvent event) {
         closeFor(event.getEntity());
     }
 
-    /** Syncs and closes every open menu. Call from the plugin's onDisable. */
+    /** Writes pending edits and closes every open menu. Call from the plugin's onDisable. */
     public void closeAll() {
         for (GolemMenu menu : List.copyOf(menus.values())) {
             close(menu);
@@ -192,10 +219,11 @@ public final class GolemMenuListener implements Listener {
     private void open(Player player, GoldenGolem golem) {
         GolemMenu menu = menus.get(golem.id());
         if (menu == null) {
-            menu = new GolemMenu(services.plugin().getServer(), services.plugin().getLogger(), golem);
+            menu = new GolemMenu(services.plugin().getServer(), golem);
             menus.put(golem.id(), menu);
         } else {
-            menu.sync();
+            writePending(menu);
+            menu.refresh();
         }
         player.openInventory(menu.getInventory());
     }
@@ -203,11 +231,12 @@ public final class GolemMenuListener implements Listener {
     private void toggle(GoldenGolem golem, Player player) {
         GolemMenu menu = menus.get(golem.id());
         if (menu != null) {
-            menu.sync();
+            writePending(menu);
         }
         followStay.toggle(golem, player);
         if (menu != null) {
-            menu.refreshControls();
+            // Transition hooks run between ticks and may move items; show them now.
+            menu.refresh();
         }
     }
 
@@ -228,11 +257,26 @@ public final class GolemMenuListener implements Listener {
     }
 
     private void close(GolemMenu menu) {
-        menu.sync();
+        writePending(menu);
         menus.remove(menu.golem().id(), menu);
         for (HumanEntity viewer : List.copyOf(menu.getInventory().getViewers())) {
             viewer.closeInventory(InventoryCloseEvent.Reason.PLUGIN);
         }
+    }
+
+    private static void writePending(GolemMenu menu) {
+        if (menu.isDirty()) {
+            menu.write();
+        }
+    }
+
+    private static @Nullable Player firstPlayer(GolemMenu menu) {
+        for (HumanEntity viewer : menu.getInventory().getViewers()) {
+            if (viewer instanceof Player player) {
+                return player;
+            }
+        }
+        return null;
     }
 
     private static boolean canControl(Player player, GoldenGolem golem) {

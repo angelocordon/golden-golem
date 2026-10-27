@@ -15,7 +15,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The Follow/Stay toggle, shared by the menu item and sneak + right-click. Reads tool and target
- * from the golem's saved data, so callers sync an open menu first. Main thread only.
+ * from the golem's saved data, so callers write an open menu's pending edits first and refresh
+ * it after (transition hooks may move items). Main thread only.
  */
 final class FollowStay {
 
@@ -36,47 +37,62 @@ final class FollowStay {
 
     void follow(GoldenGolem golem, Player actor) {
         services.controller().transition(golem, GolemState.FOLLOWING);
-        tell(actor, "Golden Golem is following its owner", NamedTextColor.GOLD);
+        tell(golem, actor, "Golden Golem is following its owner", NamedTextColor.GOLD);
     }
 
-    /** Saves the golem's block as its work center, then works, idles or refuses (TOO_FAR). */
-    void stay(GoldenGolem golem, Player actor) {
-        BlockLocation center = BlockLocation.of(golem.entity().getLocation());
-        golem.setWorkCenter(center);
+    /** Stay at the golem's current block: the new work center, unless refused as TOO_FAR. */
+    void stay(GoldenGolem golem, @Nullable Player actor) {
+        apply(golem, BlockLocation.of(golem.entity().getLocation()), actor);
+    }
 
+    /**
+     * Re-runs the Stay decision at the existing work center, after the tool or target changed
+     * on a waiting golem. Does nothing without a work center.
+     */
+    void recheck(GoldenGolem golem, @Nullable Player actor) {
+        BlockLocation center = golem.workCenter();
+        if (center != null) {
+            apply(golem, center, actor);
+        }
+    }
+
+    private void apply(GoldenGolem golem, BlockLocation center, @Nullable Player actor) {
         ItemStack tool = golem.tool();
         Material target = golem.target();
         boolean fits = tool != null && target != null && HarvestRule.toolFits(tool.getType(), target);
         BlockLocation chest = golem.chest();
+        int maxDistance = services.config().maxChestDistance();
         StayDecision decision = StayDecision.decide(tool != null, fits, chest != null,
-                distance(center, chest), services.config().maxChestDistance());
+                distance(center, chest), maxDistance);
 
-        switch (decision) {
-            case TOO_FAR -> {
-                golem.setBlockedReason(BlockedReason.TOO_FAR);
-                services.controller().transition(golem, GolemState.BLOCKED);
-                tell(actor, "Golden Golem " + BlockedReason.TOO_FAR.message() + " (max "
-                        + services.config().maxChestDistance() + " blocks)", NamedTextColor.RED);
-            }
-            case WORK -> {
-                services.controller().transition(golem, GolemState.WORKING);
-                tell(actor, "Golden Golem is working here", NamedTextColor.GOLD);
-            }
-            case IDLE -> {
+        if (decision == StayDecision.TOO_FAR) {
+            // Refused: keep the old work center.
+            golem.setBlockedReason(BlockedReason.TOO_FAR);
+            services.controller().transition(golem, GolemState.BLOCKED);
+            tell(golem, actor, "Golden Golem " + BlockedReason.TOO_FAR.message() + " (max " + maxDistance
+                    + " blocks)", NamedTextColor.RED);
+            return;
+        }
+        golem.setWorkCenter(center);
+        if (decision == StayDecision.WORK) {
+            services.controller().transition(golem, GolemState.WORKING);
+            tell(golem, actor, "Golden Golem is working here", NamedTextColor.GOLD);
+        } else {
+            if (golem.state() != GolemState.IDLE) {
                 services.controller().transition(golem, GolemState.IDLE);
-                tell(actor, idleHint(tool, target), NamedTextColor.GOLD);
             }
+            tell(golem, actor, idleHint(tool, target), NamedTextColor.GOLD);
         }
     }
 
     private static String idleHint(@Nullable ItemStack tool, @Nullable Material target) {
         if (tool == null) {
-            return "Golden Golem will wait here; give it a tool to start working";
+            return "Golden Golem is waiting here; it starts once it has a tool and a target block";
         }
         if (target == null) {
-            return "Golden Golem will wait here; give it a target block to start working";
+            return "Golden Golem is waiting here; it starts once it has a target block";
         }
-        return "Golden Golem will wait here; its tool can't gather that target";
+        return "Golden Golem is waiting here; its tool can't gather that target";
     }
 
     /** Straight-line distance in blocks; infinite if the chest is in another world. */
@@ -90,7 +106,12 @@ final class FollowStay {
         return Math.sqrt(from.pos().distanceSquared(chest.pos()));
     }
 
-    private static void tell(Player player, String message, NamedTextColor color) {
-        player.sendActionBar(Component.text(message, color));
+    /** Tells the player who acted, or the owner (action bar) when nothing in-game acted. */
+    private void tell(GoldenGolem golem, @Nullable Player actor, String message, NamedTextColor color) {
+        if (actor != null) {
+            actor.sendActionBar(Component.text(message, color));
+        } else {
+            services.feedback().tell(golem, message);
+        }
     }
 }

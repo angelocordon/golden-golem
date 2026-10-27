@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.angelocordon.goldengolem.menu.SlotRules.ClickHandling;
+import dev.angelocordon.goldengolem.menu.SlotRules.TargetCheck;
 import java.util.List;
 import java.util.function.BiPredicate;
 import org.bukkit.Material;
@@ -121,33 +122,53 @@ class SlotRulesTest {
     }
 
     @Test
-    void targetSlotTakesABlockTheToolFits() {
-        assertTrue(SlotRules.acceptsTarget(Material.IRON_PICKAXE, Material.STONE, true, ALWAYS_FITS));
+    void targetSlotTakesAPlainBlockTheToolFits() {
+        assertEquals(TargetCheck.OK,
+                SlotRules.checkTarget(Material.IRON_PICKAXE, Material.STONE, true, true, ALWAYS_FITS));
     }
 
     @Test
     void targetSlotRejectsBlocksTheToolDoesNotFit() {
-        assertFalse(SlotRules.acceptsTarget(Material.IRON_PICKAXE, Material.OAK_LOG, true, NEVER_FITS));
+        assertEquals(TargetCheck.DOES_NOT_FIT,
+                SlotRules.checkTarget(Material.IRON_PICKAXE, Material.OAK_LOG, true, true, NEVER_FITS));
     }
 
     @Test
     void targetSlotRejectsNonBlocks() {
-        assertFalse(SlotRules.acceptsTarget(Material.IRON_PICKAXE, Material.DIAMOND, false, ALWAYS_FITS));
+        assertEquals(TargetCheck.DOES_NOT_FIT,
+                SlotRules.checkTarget(Material.IRON_PICKAXE, Material.DIAMOND, false, true, ALWAYS_FITS));
+    }
+
+    @Test
+    void targetSlotRejectsItemsWithCustomData() {
+        // A renamed or custom block would lose its data, since only the Material is saved.
+        assertEquals(TargetCheck.NOT_PLAIN,
+                SlotRules.checkTarget(Material.IRON_PICKAXE, Material.STONE, true, false, ALWAYS_FITS));
     }
 
     @Test
     void targetSlotRejectsEverythingWithoutAValidTool() {
-        assertFalse(SlotRules.acceptsTarget(null, Material.STONE, true, ALWAYS_FITS));
-        assertFalse(SlotRules.acceptsTarget(Material.IRON_HOE, Material.STONE, true, ALWAYS_FITS));
-        assertFalse(SlotRules.acceptsTarget(null, Material.STONE, true));
+        assertEquals(TargetCheck.NO_TOOL, SlotRules.checkTarget(null, Material.STONE, true, true, ALWAYS_FITS));
+        assertEquals(TargetCheck.NO_TOOL,
+                SlotRules.checkTarget(Material.IRON_HOE, Material.STONE, true, true, ALWAYS_FITS));
     }
 
     @Test
     void targetSlotPassesToolAndTargetToTheFitRule() {
         BiPredicate<Material, Material> onlyPickaxeOnStone =
                 (tool, target) -> tool == Material.IRON_PICKAXE && target == Material.STONE;
-        assertTrue(SlotRules.acceptsTarget(Material.IRON_PICKAXE, Material.STONE, true, onlyPickaxeOnStone));
-        assertFalse(SlotRules.acceptsTarget(Material.IRON_AXE, Material.STONE, true, onlyPickaxeOnStone));
+        assertEquals(TargetCheck.OK,
+                SlotRules.checkTarget(Material.IRON_PICKAXE, Material.STONE, true, true, onlyPickaxeOnStone));
+        assertEquals(TargetCheck.DOES_NOT_FIT,
+                SlotRules.checkTarget(Material.IRON_AXE, Material.STONE, true, true, onlyPickaxeOnStone));
+    }
+
+    @Test
+    void targetSlotUsesTheRealHarvestRule() {
+        assertEquals(TargetCheck.OK, SlotRules.checkTarget(Material.IRON_PICKAXE, Material.STONE, true, true));
+        assertEquals(TargetCheck.OK, SlotRules.checkTarget(Material.IRON_AXE, Material.OAK_LOG, true, true));
+        assertEquals(TargetCheck.DOES_NOT_FIT,
+                SlotRules.checkTarget(Material.IRON_AXE, Material.STONE, true, true));
     }
 
     // --- shift-click fill plan ---

@@ -1,5 +1,7 @@
 package dev.angelocordon.goldengolem.menu;
 
+import dev.angelocordon.goldengolem.golem.GolemState;
+
 /** What a golem does when told to Stay. Pure, so the rule is unit-tested. */
 public enum StayDecision {
     /** Has a tool and a target it fits: start working around the new work center. */
@@ -21,5 +23,14 @@ public enum StayDecision {
             return TOO_FAR;
         }
         return hasTool && toolFitsTarget ? WORK : IDLE;
+    }
+
+    /**
+     * True if a menu edit should re-run the Stay decision: the golem was told to Stay (IDLE with
+     * a work center) and its tool or target just changed, so giving it a tool starts work
+     * without clicking Stay again.
+     */
+    public static boolean shouldRecheck(GolemState state, boolean hasWorkCenter, boolean equipmentChanged) {
+        return state == GolemState.IDLE && hasWorkCenter && equipmentChanged;
     }
 }

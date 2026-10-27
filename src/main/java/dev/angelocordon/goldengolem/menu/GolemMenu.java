@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.logging.Logger;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -27,25 +26,31 @@ import org.jspecify.annotations.Nullable;
  * The equipment menu for one golem. One instance per golem is shared by every viewer, so two
  * players can't each hold a copy of the same items.
  *
- * <p>The golem's saved data stays the source of truth. The menu is a view that {@link #sync}
- * merges back slot by slot against the last state both agreed on ({@link SlotMerge}), so player
- * edits and golem edits made in between (mining, depositing) both survive. Main thread only.
+ * <p>The golem's saved data is the source of truth and the menu is a view of it. They never
+ * both change at once because of when each side writes:
+ * <ul>
+ *   <li>Players click only between ticks. A click marks the menu dirty, and at the next tick
+ *       start (before the controller runs) {@link #write} copies the menu's tool, target and
+ *       storage to the golem.</li>
+ *   <li>The controller writes golem items only during the tick. At tick end {@link #refresh}
+ *       shows the golem's data again, so the next click acts on fresh contents.</li>
+ * </ul>
+ * <b>Any code that writes golem items outside the controller tick must call {@link #refresh}
+ * on the open menu right after</b> (and {@link #write} pending edits first), or the view goes
+ * stale and the next click can duplicate or lose items. Main thread only.
  */
 public final class GolemMenu implements InventoryHolder {
 
     private static final Component TITLE = Component.text("Golden Golem");
 
     private final GoldenGolem golem;
-    private final Logger logger;
     private final Inventory inventory;
-    private Contents base;
     private boolean dirty;
     private @Nullable GolemState shownState;
     private @Nullable BlockedReason shownReason;
 
-    GolemMenu(Server server, Logger logger, GoldenGolem golem) {
+    GolemMenu(Server server, GoldenGolem golem) {
         this.golem = golem;
-        this.logger = logger;
         this.inventory = server.createInventory(this, MenuLayout.SIZE, TITLE);
         for (int slot = 0; slot < MenuLayout.SIZE; slot++) {
             if (MenuLayout.roleOf(slot) == MenuLayout.Role.FILLER) {
@@ -55,10 +60,8 @@ public final class GolemMenu implements InventoryHolder {
         inventory.setItem(MenuLayout.TOOL_HINT, icon(Material.LIGHT_GRAY_STAINED_GLASS_PANE,
                 Component.text("<- Tool"), List.of(Component.text("A pickaxe, axe or shovel"))));
         inventory.setItem(MenuLayout.TARGET_HINT, icon(Material.LIGHT_GRAY_STAINED_GLASS_PANE,
-                Component.text("<- Target block"), List.of(Component.text("One block its tool can gather"))));
-        this.base = Contents.read(golem);
-        show(base);
-        refreshControls();
+                Component.text("<- Target block"), List.of(Component.text("One plain block its tool can gather"))));
+        refresh();
     }
 
     @Override
@@ -70,7 +73,7 @@ public final class GolemMenu implements InventoryHolder {
         return golem;
     }
 
-    /** Something in the view may have changed; {@link #sync} it at the next tick start. */
+    /** A player may have changed the view; {@link #write} it at the next tick start. */
     void markDirty() {
         dirty = true;
     }
@@ -80,43 +83,54 @@ public final class GolemMenu implements InventoryHolder {
     }
 
     /**
-     * Writes the player's edits to the golem and pulls in the golem's own edits, then makes the
-     * view match. Cheap enough to run every tick while the menu is open.
+     * Copies the menu's tool, target and storage to the golem, writing only what differs.
+     *
+     * @return true if the tool or target changed, so callers can re-check a waiting golem
      */
-    void sync() {
-        Contents view = readView();
-        Contents current = Contents.read(golem);
+    boolean write() {
+        ItemStack tool = takeOne(MenuLayout.TOOL);
+        ItemStack targetItem = takeOne(MenuLayout.TARGET);
+        Material target = targetItem == null ? null : targetItem.getType();
+        @Nullable ItemStack[] storage = new ItemStack[GoldenGolem.STORAGE_SIZE];
+        for (int i = 0; i < storage.length; i++) {
+            storage[i] = normalize(inventory.getItem(MenuLayout.storageSlot(i)));
+        }
 
-        ItemStack tool = SlotMerge.pick(base.tool(), view.tool(), current.tool(), Objects::equals);
-        Material target = SlotMerge.pick(base.target(), view.target(), current.target(), Objects::equals);
-        SlotMerge.Result<ItemStack> storage = SlotMerge.merge(base.storage(), view.storage(), current.storage(),
-                Objects::equals);
-        int conflicts = storage.conflicts()
-                + (SlotMerge.conflicts(base.tool(), view.tool(), current.tool(), Objects::equals) ? 1 : 0)
-                + (SlotMerge.conflicts(base.target(), view.target(), current.target(), Objects::equals) ? 1 : 0);
-        if (conflicts > 0) {
-            // Both sides changed the same slot between two syncs; the player's edit wins.
-            logger.warning("Golden golem " + golem.id() + ": menu and golem both changed " + conflicts
-                    + " slot(s) in the same tick; kept the menu's version");
+        boolean equipmentChanged = false;
+        if (!Objects.equals(tool, normalize(golem.tool()))) {
+            golem.setTool(tool);
+            equipmentChanged = true;
         }
-        Contents merged = new Contents(tool, target, storage.slots());
-
-        if (!Objects.equals(merged.tool(), current.tool())) {
-            golem.setTool(merged.tool());
+        if (target != golem.target()) {
+            golem.setTarget(target);
+            equipmentChanged = true;
         }
-        if (merged.target() != current.target()) {
-            golem.setTarget(merged.target());
+        @Nullable ItemStack[] saved = golem.storage();
+        for (int i = 0; i < saved.length; i++) {
+            saved[i] = normalize(saved[i]);
         }
-        if (!merged.storage().equals(current.storage())) {
-            golem.setStorage(merged.storage().toArray(new ItemStack[0]));
+        if (!Arrays.equals(storage, saved)) {
+            golem.setStorage(storage);
         }
-        base = merged;
-        show(merged);
         dirty = false;
+        return equipmentChanged;
+    }
+
+    /** Shows the golem's current items, state and blocked reason. Discards unwritten edits. */
+    void refresh() {
+        setIfDifferent(MenuLayout.TOOL, normalize(golem.tool()));
+        Material target = golem.target();
+        setIfDifferent(MenuLayout.TARGET, target == null || !target.isItem() ? null : new ItemStack(target));
+        @Nullable ItemStack[] storage = golem.storage();
+        for (int i = 0; i < storage.length; i++) {
+            setIfDifferent(MenuLayout.storageSlot(i), normalize(storage[i]));
+        }
+        dirty = false;
+        refreshControls();
     }
 
     /** Updates the toggle and status items if the golem's state or blocked reason changed. */
-    void refreshControls() {
+    private void refreshControls() {
         GolemState state = golem.state();
         BlockedReason reason = golem.blockedReason();
         if (state == shownState && reason == shownReason) {
@@ -204,21 +218,13 @@ public final class GolemMenu implements InventoryHolder {
         ItemStack tool = normalize(inventory.getItem(MenuLayout.TOOL));
         Material toolType = tool == null ? null : tool.getType();
         Material candidate = cursor.getType();
-        if (SlotRules.acceptsTarget(toolType, candidate, candidate.isBlock())) {
-            return null;
-        }
-        return toolType == null ? "Put a tool in first" : "Its tool can't gather that";
-    }
-
-    /** Reads the view. Copies every item, since the inventory hands out live mirrors. */
-    private Contents readView() {
-        ItemStack tool = takeOne(MenuLayout.TOOL);
-        ItemStack targetItem = takeOne(MenuLayout.TARGET);
-        List<@Nullable ItemStack> storage = new ArrayList<>(GoldenGolem.STORAGE_SIZE);
-        for (int i = 0; i < GoldenGolem.STORAGE_SIZE; i++) {
-            storage.add(normalize(inventory.getItem(MenuLayout.storageSlot(i))));
-        }
-        return new Contents(tool, targetItem == null ? null : targetItem.getType(), storage);
+        boolean plain = cursor.asOne().isSimilar(new ItemStack(candidate));
+        return switch (SlotRules.checkTarget(toolType, candidate, candidate.isBlock(), plain)) {
+            case OK -> null;
+            case NO_TOOL -> "Put a tool in first";
+            case NOT_PLAIN -> "Use a plain block as the target";
+            case DOES_NOT_FIT -> "Its tool can't gather that";
+        };
     }
 
     /**
@@ -245,15 +251,6 @@ public final class GolemMenu implements InventoryHolder {
         HumanEntity viewer = viewers.getFirst();
         for (ItemStack left : viewer.getInventory().addItem(item).values()) {
             viewer.getWorld().dropItem(viewer.getLocation(), left);
-        }
-    }
-
-    private void show(Contents contents) {
-        setIfDifferent(MenuLayout.TOOL, contents.tool());
-        Material target = contents.target();
-        setIfDifferent(MenuLayout.TARGET, target == null || !target.isItem() ? null : new ItemStack(target));
-        for (int i = 0; i < GoldenGolem.STORAGE_SIZE; i++) {
-            setIfDifferent(MenuLayout.storageSlot(i), contents.storage().get(i));
         }
     }
 
@@ -302,15 +299,5 @@ public final class GolemMenu implements InventoryHolder {
     /** A detached copy, or null for an empty slot. */
     static @Nullable ItemStack normalize(@Nullable ItemStack item) {
         return item == null || item.isEmpty() ? null : item.clone();
-    }
-
-    /** One snapshot of everything the menu can edit. */
-    private record Contents(@Nullable ItemStack tool, @Nullable Material target, List<@Nullable ItemStack> storage) {
-
-        static Contents read(GoldenGolem golem) {
-            List<@Nullable ItemStack> storage = new ArrayList<>(Arrays.asList(golem.storage()));
-            storage.replaceAll(GolemMenu::normalize);
-            return new Contents(normalize(golem.tool()), golem.target(), storage);
-        }
     }
 }
