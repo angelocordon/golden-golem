@@ -39,6 +39,11 @@ public final class BlockedAnnouncements {
         return true;
     }
 
+    /** Forgets golem {@code id}, so its next block is announced whatever the reason. */
+    public void forget(UUID id) {
+        last.remove(id);
+    }
+
     /** How many golems are currently remembered. For tests. */
     int size() {
         return last.size();

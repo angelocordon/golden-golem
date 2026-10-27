@@ -41,6 +41,13 @@ class BlockedAnnouncementsTest {
     }
 
     @Test
+    void sameReasonIsAnnouncedAgainAfterForget() {
+        announcements.shouldAnnounce(GOLEM, BlockedReason.CHEST_FULL, 0);
+        announcements.forget(GOLEM);
+        assertTrue(announcements.shouldAnnounce(GOLEM, BlockedReason.CHEST_FULL, 10));
+    }
+
+    @Test
     void golemsAreTrackedSeparately() {
         announcements.shouldAnnounce(GOLEM, BlockedReason.NO_TOOL, 0);
         assertTrue(announcements.shouldAnnounce(OTHER, BlockedReason.NO_TOOL, 1));

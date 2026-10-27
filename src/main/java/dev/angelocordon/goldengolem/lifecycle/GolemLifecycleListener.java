@@ -2,6 +2,7 @@ package dev.angelocordon.goldengolem.lifecycle;
 
 import dev.angelocordon.goldengolem.Services;
 import dev.angelocordon.goldengolem.golem.GoldenGolem;
+import dev.angelocordon.goldengolem.menu.GolemMenuListener;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -30,13 +31,11 @@ import org.jspecify.annotations.Nullable;
 /**
  * Death drops, gold-ingot healing and not fighting back.
  *
- * <p>Healing is limited to the owner and players with {@link #ADMIN_PERMISSION}, the same people
- * who can open the golem's menu, so strangers can't spend gold on (or grief around) someone
- * else's golem. When hurt the golem does nothing special yet; fleeing is out of scope for 0.1.0.
+ * <p>Healing is limited to the owner and players with {@link GolemMenuListener#ADMIN_PERMISSION},
+ * the same people who can open the golem's menu, so strangers can't spend gold on (or grief
+ * around) someone else's golem. When hurt the golem does nothing special yet; fleeing is out of scope for 0.1.0.
  */
 public final class GolemLifecycleListener implements Listener {
-
-    static final String ADMIN_PERMISSION = "goldengolem.admin";
 
     private final Services services;
     /** What each dying golem had, kept from NORMAL to MONITOR in case the death is cancelled. */
@@ -79,7 +78,9 @@ public final class GolemLifecycleListener implements Listener {
         golem.setTool(null);
         golem.setTarget(null);
         golem.setStorage(new ItemStack[GoldenGolem.STORAGE_SIZE]);
-        dying.put(golem.id(), new Carried(tool, target, storage, drops));
+        // Copies, so a plugin that edits the drop stacks and then cancels the death can't change
+        // what the golem gets back.
+        dying.put(golem.id(), new Carried(copy(tool), target, copyAll(storage), drops));
     }
 
     /**
@@ -117,7 +118,7 @@ public final class GolemLifecycleListener implements Listener {
             return;
         }
         GoldenGolem golem = found.get();
-        if (!golem.isOwnedBy(player.getUniqueId()) && !player.hasPermission(ADMIN_PERMISSION)) {
+        if (!golem.isOwnedBy(player.getUniqueId()) && !player.hasPermission(GolemMenuListener.ADMIN_PERMISSION)) {
             return;
         }
         if (!services.lifecycle().heal(golem.entity())) {
@@ -138,6 +139,18 @@ public final class GolemLifecycleListener implements Listener {
         if (event.getTarget() != null && GoldenGolem.isGoldenGolem(event.getEntity())) {
             event.setCancelled(true);
         }
+    }
+
+    private static @Nullable ItemStack copy(@Nullable ItemStack item) {
+        return item == null ? null : item.clone();
+    }
+
+    private static @Nullable ItemStack[] copyAll(@Nullable ItemStack[] items) {
+        @Nullable ItemStack[] copies = new ItemStack[items.length];
+        for (int i = 0; i < items.length; i++) {
+            copies[i] = copy(items[i]);
+        }
+        return copies;
     }
 
     /** One of the target block as an item, or null if there's no target or it has no item form. */
