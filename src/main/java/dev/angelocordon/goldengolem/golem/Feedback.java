@@ -2,6 +2,7 @@ package dev.angelocordon.goldengolem.golem;
 
 import dev.angelocordon.goldengolem.golem.state.BlockedAnnouncements;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
@@ -17,9 +18,9 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Tells a golem's owner what it's doing. When it gets stuck the golem shakes its head and says
- * "no" to anyone nearby, and its owner gets the reason on the action bar if they're close enough
- * to care. Repeats of the same reason are rate-limited by {@link BlockedAnnouncements}.
+ * Tells a golem's owner (and the player it follows, if that's someone else) what it's doing.
+ * When it gets stuck the golem shakes its head and says "no" to anyone nearby, and they get the
+ * reason on the action bar if they're close enough to care. Repeats of the same reason are rate-limited by {@link BlockedAnnouncements}.
  */
 public class Feedback {
 
@@ -47,9 +48,10 @@ public class Feedback {
         CopperGolem entity = golem.entity();
         entity.getWorld().playSound(entity, Sound.ENTITY_VILLAGER_NO, SoundCategory.NEUTRAL, 1f, 1f);
         shakeHead(golem);
-        Player owner = nearbyOwner(golem);
-        if (owner != null) {
-            owner.sendActionBar(Component.text("Golden Golem " + reason.message(), NamedTextColor.GOLD));
+        for (Player player : audience(golem)) {
+            if (isNear(player, entity.getLocation())) {
+                player.sendActionBar(Component.text("Golden Golem " + reason.message(), NamedTextColor.GOLD));
+            }
         }
     }
 
@@ -61,11 +63,10 @@ public class Feedback {
         announcements.forget(golem.id());
     }
 
-    /** Sends a short status line to the owner, if online. */
+    /** Sends a short status line to the owner and the leader (if different), when online. */
     public void tell(GoldenGolem golem, String message) {
-        Player owner = onlineOwner(golem);
-        if (owner != null) {
-            owner.sendActionBar(Component.text(message, NamedTextColor.GOLD));
+        for (Player player : audience(golem)) {
+            player.sendActionBar(Component.text(message, NamedTextColor.GOLD));
         }
     }
 
@@ -74,16 +75,25 @@ public class Feedback {
         return owner == null ? null : Bukkit.getPlayer(owner);
     }
 
-    private @Nullable Player nearbyOwner(GoldenGolem golem) {
+    protected @Nullable Player onlineLeader(GoldenGolem golem) {
+        UUID leader = golem.leader();
+        return leader == null ? null : Bukkit.getPlayer(leader);
+    }
+
+    /** The online owner, plus the online leader when that is someone else. */
+    private List<Player> audience(GoldenGolem golem) {
         Player owner = onlineOwner(golem);
-        if (owner == null) {
-            return null;
+        Player leader = onlineLeader(golem);
+        if (leader == null || leader.equals(owner)) {
+            return owner == null ? List.of() : List.of(owner);
         }
-        Location at = golem.entity().getLocation();
-        Location ownerAt = owner.getLocation();
-        boolean near = ownerAt.getWorld().equals(at.getWorld())
-                && ownerAt.distanceSquared(at) <= OWNER_RANGE * OWNER_RANGE;
-        return near ? owner : null;
+        return owner == null ? List.of(leader) : List.of(owner, leader);
+    }
+
+    private static boolean isNear(Player player, Location at) {
+        Location playerAt = player.getLocation();
+        return playerAt.getWorld().equals(at.getWorld())
+                && playerAt.distanceSquared(at) <= OWNER_RANGE * OWNER_RANGE;
     }
 
     /**

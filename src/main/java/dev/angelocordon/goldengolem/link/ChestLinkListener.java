@@ -31,7 +31,7 @@ import org.bukkit.inventory.PlayerInventory;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Relinks a following golem when its owner right-clicks a golden chest, and blocks golems
+ * Relinks a following golem when the player it follows right-clicks a golden chest, and blocks golems
  * whose chest is broken.
  *
  * <p>Breaks are handled in two steps. While the chest is still readable, each broken golden half
@@ -43,7 +43,7 @@ import org.jspecify.annotations.Nullable;
  */
 public final class ChestLinkListener implements Listener {
 
-    /** How close a following golem must be to its owner to be relinked by a chest click. */
+    /** How close a following golem must be to its leader to be relinked by a chest click. */
     static final double RELINK_RADIUS = 8;
 
     private final Services services;
@@ -130,7 +130,7 @@ public final class ChestLinkListener implements Listener {
         Location at = player.getLocation();
         List<GoldenGolem> following = new ArrayList<>();
         for (GoldenGolem golem : services.registry().all()) {
-            if (!golem.isValid() || golem.state() != GolemState.FOLLOWING || !golem.isOwnedBy(playerId)) {
+            if (!golem.isValid() || golem.state() != GolemState.FOLLOWING || !golem.isLedBy(playerId)) {
                 continue;
             }
             Location golemAt = golem.entity().getLocation();

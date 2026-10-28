@@ -67,19 +67,37 @@ public final class GoldenGolem {
 
     /** The player who built it. Null only if the data was tampered with. */
     public @Nullable UUID owner() {
-        String raw = pdc().get(Keys.OWNER, PersistentDataType.STRING);
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return UUID.fromString(raw);
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+        return uuid(Keys.OWNER);
     }
 
     public boolean isOwnedBy(UUID player) {
         return player.equals(owner());
+    }
+
+    /**
+     * The player who last told it to follow, or null if it isn't following (or was saved before
+     * leaders existed).
+     */
+    public @Nullable UUID leader() {
+        return uuid(Keys.LEADER);
+    }
+
+    public void setLeader(@Nullable UUID leader) {
+        if (leader == null) {
+            pdc().remove(Keys.LEADER);
+        } else {
+            pdc().set(Keys.LEADER, PersistentDataType.STRING, leader.toString());
+        }
+    }
+
+    /** Who a following golem walks after: the leader, or the owner if no leader is stored. */
+    public @Nullable UUID followTarget() {
+        return FollowTarget.choose(leader(), owner());
+    }
+
+    /** True if {@code player} is who this golem follows when it follows. */
+    public boolean isLedBy(UUID player) {
+        return FollowTarget.isLedBy(leader(), owner(), player);
     }
 
     /**
@@ -193,6 +211,18 @@ public final class GoldenGolem {
             pdc().remove(Keys.STORAGE);
         } else {
             pdc().set(Keys.STORAGE, PersistentDataType.BYTE_ARRAY, ItemStack.serializeItemsAsBytes(slots));
+        }
+    }
+
+    private @Nullable UUID uuid(org.bukkit.NamespacedKey key) {
+        String raw = pdc().get(key, PersistentDataType.STRING);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException e) {
+            return null;
         }
     }
 
