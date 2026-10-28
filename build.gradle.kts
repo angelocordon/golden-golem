@@ -24,6 +24,15 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
+// Smoke-test only: a second plugin that drives a golem from the console. It has its own jar and
+// never goes into the release jar.
+val testSupport = sourceSets.create("testSupport")
+
+dependencies {
+    "testSupportCompileOnly"(paperApi)
+    "testSupportCompileOnly"(sourceSets.main.get().output)
+}
+
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(25)
 }
@@ -50,4 +59,19 @@ tasks.processResources {
 tasks.jar {
     // Fixed name so releases/latest/download/golden-golem.jar always points at the newest build.
     archiveFileName = "golden-golem.jar"
+}
+
+tasks.named<ProcessResources>("processTestSupportResources") {
+    filesMatching("plugin.yml") {
+        expand("version" to project.version)
+    }
+}
+
+val testSupportJar by tasks.registering(Jar::class) {
+    archiveFileName = "golden-golem-testsupport.jar"
+    from(testSupport.output)
+}
+
+tasks.build {
+    dependsOn(testSupportJar)
 }
