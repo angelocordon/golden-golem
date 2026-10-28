@@ -25,12 +25,13 @@ Agent rules for this repo, read by Ada's agents from [ada-agents](https://github
 - Design spec: linked from the Linear project.
 
 ## Deploy
-- **Target:** Hyperion (homelab), Docker container `minecraft` (`itzg/minecraft-server`), Paper 26.3 with Geyser, Floodgate and CreeperNoGrief. Config lives in the homelab repo at `hyperion/minecraft/compose.yaml`; the server data is in `/home/angelo/minecraft/data`. Reach it with `ssh claude-admin@hyperion`.
-- **How a release reaches it:** `PLUGINS` points at `releases/latest/download/golden-golem.jar`, which downloads on every start. Deploying a release is a restart: `cd /home/angelo/minecraft && sudo docker compose restart`.
+- **Target:** Hyperion (homelab), Docker container `minecraft` (`itzg/minecraft-server`), Paper 26.3 with Geyser, Floodgate and CreeperNoGrief. Config lives in the homelab repo at `hyperion/minecraft/compose.yaml` and is applied with that repo's Ansible playbook.
+- **Access:** join the tailnet with `ada-agents` `scripts/tailscale-up.sh` (tag `tag:ada-agent`), then `ssh ada@hyperion`. The `ada` user's sudo allows exactly four commands: `docker ps`, `docker logs minecraft`, `docker exec minecraft rcon-cli list` and `docker restart minecraft`. Anything else (compose, systemctl, files under `/home/angelo`) is refused by design; do not look for another way in.
+- **How a release reaches it:** `PLUGINS` points at `releases/latest/download/golden-golem.jar`, which downloads on every container start. Deploying a new release is a restart: `sudo docker restart minecraft`.
 - **Active-use check before a restart:** `sudo docker exec minecraft rcon-cli list`. If anyone is online, do not restart; report who and wait.
-- **Backup before a deploy:** `sudo systemctl start minecraft-backup` (writes `/var/backups/minecraft/minecraft-latest.tar.gz`).
+- **Backup:** the nightly `minecraft-backup.timer` (3am Pacific) keeps one copy of the world. Agents cannot trigger a backup. If the release changes saved data (PDC format, config migration), stop and ask the user to run `sudo systemctl start minecraft-backup` first.
 - **Verify:** `sudo docker logs minecraft` shows `Done (...)!` and `GoldenGolem` enabled with the expected version, and no new errors.
-- **Rollback:** change the golden-golem URL in the homelab `compose.yaml` from `releases/latest/download/` to `releases/download/vX.Y.Z/` for the previous release, apply it through the homelab repo's normal change process, then restart.
+- **Rollback and config changes:** these go through the homelab playbook, which agents cannot run. Report what is needed: pin the golden-golem URL in `hyperion/minecraft/compose.yaml` from `releases/latest/download/` to `releases/download/vX.Y.Z/` for the previous release, then the user runs `ansible-playbook hyperion/playbook.yml` (it recreates the container).
 
 ## Core code digest
 - TODO (no issue yet): `docs/core-classes.md`, one paragraph per core class. Until it exists, the packages under `src/main/java/.../goldengolem/` are: `golem` (data, registry, controller, states), `golem/state` (one handler per state), `golem/movement` (pathing and AI takeover), `work` (scanning, harvest and break rules, deposit), `link` and `chest` (golden chests and linking), `menu`, `build`, `lifecycle` (death drops, healing, load/unload).
