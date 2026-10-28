@@ -266,7 +266,7 @@ public final class GolemMenu implements InventoryHolder {
                 Component.text(following ? "Following" : "Staying", NamedTextColor.GOLD),
                 List.of(Component.text(following
                         ? "Click to Stay and work here"
-                        : "Click to Follow its owner", NamedTextColor.GRAY)));
+                        : "Click to Follow you", NamedTextColor.GRAY)));
     }
 
     private static ItemStack statusItem(GolemState state, @Nullable BlockedReason reason) {

@@ -18,11 +18,11 @@ into the server's `plugins/` folder and restart. Requires Paper 26.3.
    which can serve two golems.
 2. **Build the golem:** place a block of gold within 4 blocks of the chest and put a carved
    pumpkin (or jack o'lantern) on top. The golem links to the nearest golden chest with room.
-3. **Equip it:** right-click the golem to open its menu. Put a pickaxe, axe or shovel in the
+3. **Equip it:** right-click or hit (tap) the golem to open its menu. Put a pickaxe, axe or shovel in the
    tool slot and one block of what it should gather in the target slot (logs with an axe; stone,
    ores and similar with a pickaxe; dirt, sand and gravel with a shovel).
-4. **Put it to work:** click the Follow/Stay button (or sneak + right-click the golem) so it
-   follows you. Walk to the spot and click Stay. It works a 33x33 area around that spot, 4
+4. **Put it to work:** click the Follow/Stay button (or sneak + hit or right-click the golem)
+   so it follows you. Walk to the spot and click Stay. It works a 33x33 area around that spot, 4
    blocks up and down, and must be within 64 blocks of its chest.
 
 The golem walks home when its 15 slots are full, when its tool is nearly worn out, or when the
@@ -33,11 +33,15 @@ If it gets stuck (no tool, chest full, chest gone, can't reach), it shakes its h
 why in the action bar, and checks again every few seconds.
 
 **More:**
-- Right-click it with a gold ingot to heal it.
+- Anyone can use anyone's golem: open the menu, make it follow or stay, heal it, relink it.
+  Hitting it (or tapping, on touch) works like right-click whatever you hold, and nobody can
+  hurt it by hitting or shooting it.
+- Hit or right-click it with a gold ingot to heal it.
 - If it dies, it drops its tool, target block and everything it carried.
-- To relink it to another chest, have it follow you and right-click that golden chest.
-- It respects protection plugins: it only breaks blocks its owner could break. It pauses while
-  its owner is offline and picks up again when they're back.
+- A golem follows whoever told it to. To relink it to another chest, have it follow you and
+  right-click that golden chest.
+- It respects protection plugins: it only breaks blocks its owner (the player who built it)
+  could break. It pauses while its owner is offline and picks up again when they're back.
 - It won't dig a block with sand or gravel on top if that would bury it, and it skips blocks
   next to lava or above a big drop.
 
@@ -46,9 +50,6 @@ why in the action bar, and checks again every few seconds.
 `plugins/GoldenGolem/config.yml`: work radius (default 16, max 32), vertical range, how far the
 work spot may be from the chest, how many blocks it scans per tick, and when a tool counts as
 worn out. Restart after changing it.
-
-Permission `goldengolem.admin` (default: op) lets a player open and control other players'
-golems.
 
 ## Known limitations (0.1.0)
 

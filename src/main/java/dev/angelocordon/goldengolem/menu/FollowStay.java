@@ -14,7 +14,7 @@ import org.bukkit.inventory.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The Follow/Stay toggle, shared by the menu item and sneak + right-click. Reads tool and target
+ * The Follow/Stay toggle, shared by the menu item and sneak + hit or right-click. Reads tool and target
  * from the golem's saved data, so callers write an open menu's pending edits first and refresh
  * it after (transition hooks may move items). Main thread only.
  */
@@ -37,7 +37,9 @@ final class FollowStay {
 
     void follow(GoldenGolem golem, Player actor) {
         services.controller().transition(golem, GolemState.FOLLOWING);
-        tell(golem, actor, "Golden Golem is following its owner", NamedTextColor.GOLD);
+        // After the transition: leaving the previous state must not clear the new leader.
+        golem.setLeader(actor.getUniqueId());
+        tell(golem, actor, "Golden Golem is following you", NamedTextColor.GOLD);
     }
 
     /** Stay at the golem's current block: the new work center, unless refused as TOO_FAR. */

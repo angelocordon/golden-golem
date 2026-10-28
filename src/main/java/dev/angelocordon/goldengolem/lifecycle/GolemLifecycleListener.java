@@ -2,38 +2,25 @@ package dev.angelocordon.goldengolem.lifecycle;
 
 import dev.angelocordon.goldengolem.Services;
 import dev.angelocordon.goldengolem.golem.GoldenGolem;
-import dev.angelocordon.goldengolem.menu.GolemMenuListener;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import org.bukkit.GameMode;
-import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.Particle;
-import org.bukkit.Sound;
-import org.bukkit.SoundCategory;
-import org.bukkit.entity.CopperGolem;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityTargetEvent;
-import org.bukkit.event.player.PlayerInteractAtEntityEvent;
-import org.bukkit.event.player.PlayerInteractEntityEvent;
-import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Death drops, gold-ingot healing and not fighting back.
- *
- * <p>Healing is limited to the owner and players with {@link GolemMenuListener#ADMIN_PERMISSION},
- * the same people who can open the golem's menu, so strangers can't spend gold on (or grief
- * around) someone else's golem. When hurt the golem does nothing special yet; fleeing is out of scope for 0.1.0.
+ * Death drops and not fighting back. Healing with a gold ingot is part of the shared control
+ * input in {@code GolemMenuListener}. When hurt the golem does nothing special yet; fleeing is
+ * out of scope for 0.1.0.
  */
 public final class GolemLifecycleListener implements Listener {
 
@@ -101,38 +88,6 @@ public final class GolemLifecycleListener implements Listener {
         event.getDrops().removeIf(drop -> carried.drops().stream().anyMatch(added -> added == drop));
     }
 
-    /**
-     * Gold ingot on a hurt golem heals it. Runs before the menu listener (HIGH, ignoreCancelled)
-     * and cancels the event so the menu doesn't open. At full health it does nothing and the menu
-     * opens as usual.
-     */
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
-    public void onInteract(PlayerInteractEntityEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND || event instanceof PlayerInteractAtEntityEvent) {
-            return;
-        }
-        Optional<GoldenGolem> found = GoldenGolem.of(event.getRightClicked());
-        Player player = event.getPlayer();
-        ItemStack hand = player.getInventory().getItemInMainHand();
-        if (found.isEmpty() || hand.getType() != Material.GOLD_INGOT) {
-            return;
-        }
-        GoldenGolem golem = found.get();
-        if (!golem.isOwnedBy(player.getUniqueId()) && !player.hasPermission(GolemMenuListener.ADMIN_PERMISSION)) {
-            return;
-        }
-        if (!services.lifecycle().heal(golem.entity())) {
-            return;
-        }
-        event.setCancelled(true);
-        if (player.getGameMode() != GameMode.CREATIVE) {
-            ItemStack rest = hand.clone();
-            rest.setAmount(hand.getAmount() - 1);
-            player.getInventory().setItemInMainHand(rest.getAmount() > 0 ? rest : null);
-        }
-        healEffects(golem.entity());
-    }
-
     /** Vanilla copper golems don't attack, but a golden golem must never target anything. */
     @EventHandler(ignoreCancelled = true)
     public void onTarget(EntityTargetEvent event) {
@@ -159,11 +114,5 @@ public final class GolemLifecycleListener implements Listener {
             return null;
         }
         return new ItemStack(target);
-    }
-
-    private static void healEffects(CopperGolem entity) {
-        Location at = entity.getLocation().add(0, entity.getHeight() / 2, 0);
-        entity.getWorld().playSound(entity, Sound.ENTITY_IRON_GOLEM_REPAIR, SoundCategory.NEUTRAL, 1f, 1.2f);
-        entity.getWorld().spawnParticle(Particle.HAPPY_VILLAGER, at, 8, 0.3, 0.4, 0.3);
     }
 }

@@ -1,8 +1,16 @@
 package dev.angelocordon.goldengolem.lifecycle;
 
+import org.bukkit.GameMode;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.Particle;
+import org.bukkit.Sound;
+import org.bukkit.SoundCategory;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.CopperGolem;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 /**
  * Golem stats and healing. A golden golem is much tougher than a vanilla copper golem so a stray
@@ -29,6 +37,33 @@ public final class GolemLifecycle {
     public boolean hasStats(CopperGolem golem) {
         AttributeInstance maxHealth = golem.getAttribute(Attribute.MAX_HEALTH);
         return maxHealth == null || maxHealth.getBaseValue() == MAX_HEALTH;
+    }
+
+    /** True if the golem is alive and below max health, i.e. {@link #heal} would do something. */
+    public boolean needsHealing(CopperGolem golem) {
+        AttributeInstance maxHealth = golem.getAttribute(Attribute.MAX_HEALTH);
+        return maxHealth != null && !golem.isDead() && Healing.needsHealing(golem.getHealth(), maxHealth.getValue());
+    }
+
+    /**
+     * Heals the golem with the gold ingot in the player's main hand: one ingot is used (none in
+     * creative) and the repair effects play. Does nothing, and returns false, if the golem is at
+     * full health or the player isn't holding gold.
+     */
+    public boolean healWithIngot(Player player, CopperGolem golem) {
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand.getType() != Material.GOLD_INGOT || !heal(golem)) {
+            return false;
+        }
+        if (player.getGameMode() != GameMode.CREATIVE) {
+            ItemStack rest = hand.clone();
+            rest.setAmount(hand.getAmount() - 1);
+            player.getInventory().setItemInMainHand(rest.getAmount() > 0 ? rest : null);
+        }
+        Location at = golem.getLocation().add(0, golem.getHeight() / 2, 0);
+        golem.getWorld().playSound(golem, Sound.ENTITY_IRON_GOLEM_REPAIR, SoundCategory.NEUTRAL, 1f, 1.2f);
+        golem.getWorld().spawnParticle(Particle.HAPPY_VILLAGER, at, 8, 0.3, 0.4, 0.3);
+        return true;
     }
 
     /** Heals {@link #HEAL_AMOUNT}, capped at max health. Returns false (and does nothing) at full health. */

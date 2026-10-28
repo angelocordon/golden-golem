@@ -14,6 +14,7 @@ public final class Keys {
     // On the golem entity.
     public static final NamespacedKey GOLEM = key("golem");
     public static final NamespacedKey OWNER = key("owner");
+    public static final NamespacedKey LEADER = key("leader");
     public static final NamespacedKey STATE = key("state");
     public static final NamespacedKey BLOCKED_REASON = key("blocked_reason");
     public static final NamespacedKey CHEST = key("chest");

@@ -11,15 +11,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -34,8 +36,13 @@ import org.bukkit.inventory.ItemStack;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Opens the equipment menu on right-click, handles Follow/Stay (menu item and sneak +
- * right-click), and enforces the menu's slot rules.
+ * Handles every player control input on a golden golem, from anyone: a hit or a right-click
+ * opens the equipment menu, toggles Follow/Stay (sneaking) or heals (gold ingot on a hurt
+ * golem), see {@link ControlInput}. Also handles the menu's Follow/Stay item, enforces its slot
+ * rules, and keeps players from ever damaging a golem.
+ *
+ * <p>A hit is a control input because touch players can't right-click: a tap attacks, and the
+ * Interact button only shows for items vanilla copper golems react to.
  *
  * <p>Follows {@link GolemMenu}'s write/refresh contract: pending edits are written at tick start
  * (before the controller), the view is refreshed at tick end and after every write made here
@@ -44,9 +51,6 @@ import org.jspecify.annotations.Nullable;
  * the golem's death drops or saved data at once.
  */
 public final class GolemMenuListener implements Listener {
-
-    /** Lets a player open and control golems they don't own. */
-    public static final String ADMIN_PERMISSION = "goldengolem.admin";
 
     private final Services services;
     private final FollowStay followStay;
@@ -58,8 +62,8 @@ public final class GolemMenuListener implements Listener {
     }
 
     /**
-     * HIGH and ignoreCancelled so features that consume a right-click on the golem at a lower
-     * priority (e.g. healing with a gold ingot) win by cancelling the event.
+     * HIGH and ignoreCancelled so protection plugins that deny the click at a lower priority win.
+     * Heal, toggle and menu all go through {@link #control}, so there is one order of precedence.
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onInteract(PlayerInteractEntityEvent event) {
@@ -73,16 +77,43 @@ public final class GolemMenuListener implements Listener {
         if (event.getHand() != EquipmentSlot.HAND || event instanceof PlayerInteractAtEntityEvent) {
             return;
         }
-        GoldenGolem golem = found.get();
-        Player player = event.getPlayer();
-        if (!canControl(player, golem)) {
-            player.sendActionBar(Component.text("This Golden Golem belongs to someone else", NamedTextColor.RED));
+        control(event.getPlayer(), found.get());
+    }
+
+    /**
+     * A hit by a player is a control input, and no player (or player's projectile) ever hurts a
+     * golem. Cancelling the damage event also skips knockback and the hurt animation. Mobs and
+     * the environment are untouched, so death drops still work. HIGH and ignoreCancelled: if a
+     * protection plugin already cancelled the hit, nothing is controlled either.
+     *
+     * <p>Only {@code ENTITY_ATTACK} controls, so a sweep attack that clips the golem is just
+     * cancelled and one swing can't act twice. Projectiles are cancelled and do nothing else.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDamage(EntityDamageByEntityEvent event) {
+        Optional<GoldenGolem> found = GoldenGolem.of(event.getEntity());
+        if (found.isEmpty()) {
             return;
         }
-        if (player.isSneaking()) {
-            toggle(golem, player);
-        } else {
-            open(player, golem);
+        Entity damager = event.getDamager();
+        if (damager instanceof Player player) {
+            event.setCancelled(true);
+            if (event.getCause() == EntityDamageEvent.DamageCause.ENTITY_ATTACK) {
+                control(player, found.get());
+            }
+        } else if (damager instanceof Projectile projectile && projectile.getShooter() instanceof Player) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** The one place a hit or right-click becomes an action. */
+    private void control(Player player, GoldenGolem golem) {
+        boolean goldInHand = player.getInventory().getItemInMainHand().getType() == Material.GOLD_INGOT;
+        boolean hurt = goldInHand && services.lifecycle().needsHealing(golem.entity());
+        switch (ControlInput.decide(player.isSneaking(), goldInHand, hurt)) {
+            case HEAL -> services.lifecycle().healWithIngot(player, golem.entity());
+            case TOGGLE -> toggle(golem, player);
+            case OPEN -> open(player, golem);
         }
     }
 
@@ -277,10 +308,6 @@ public final class GolemMenuListener implements Listener {
             }
         }
         return null;
-    }
-
-    private static boolean canControl(Player player, GoldenGolem golem) {
-        return golem.isOwnedBy(player.getUniqueId()) || player.hasPermission(ADMIN_PERMISSION);
     }
 
     private static @Nullable GolemMenu menuOf(Inventory inventory) {
