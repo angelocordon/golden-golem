@@ -40,7 +40,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: golden-golem
-          path: build/libs/golden-golem.jar
+          path: |
+            build/libs/golden-golem.jar
+            build/libs/golden-golem-testsupport.jar
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -78,7 +80,7 @@ jobs:
           key: paper-26.3-${{ steps.paper.outputs.build }}
 
       - name: Boot Paper with the plugin
-        run: scripts/smoke-test.sh run artifact/golden-golem.jar
+        run: scripts/smoke-test.sh run artifact/golden-golem.jar artifact/golden-golem-testsupport.jar
 
       - name: Upload server log
         if: always()

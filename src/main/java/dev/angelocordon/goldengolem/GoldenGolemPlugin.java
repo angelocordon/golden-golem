@@ -22,6 +22,9 @@ import dev.angelocordon.goldengolem.lifecycle.GolemLifecycleListener;
 import dev.angelocordon.goldengolem.link.ChestLinkListener;
 import dev.angelocordon.goldengolem.link.ChestLinker;
 import dev.angelocordon.goldengolem.menu.GolemMenuListener;
+import java.util.UUID;
+import java.util.function.Function;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jspecify.annotations.Nullable;
@@ -33,6 +36,20 @@ import org.jspecify.annotations.Nullable;
 public final class GoldenGolemPlugin extends JavaPlugin {
 
     private @Nullable GolemMenuListener menus;
+    private volatile Function<UUID, @Nullable Player> playerLookup = id -> getServer().getPlayer(id);
+
+    /** The online player with this id, or null. Golems go through here to find their owner. */
+    public @Nullable Player onlinePlayer(UUID id) {
+        return playerLookup.apply(id);
+    }
+
+    /**
+     * Replaces how golems find their owner. Only the smoke-test support plugin calls this, to
+     * stand in a player on a server nobody can join.
+     */
+    public void overridePlayerLookup(Function<UUID, @Nullable Player> lookup) {
+        playerLookup = lookup;
+    }
 
     @Override
     public void onEnable() {

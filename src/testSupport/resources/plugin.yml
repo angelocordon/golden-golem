@@ -1,0 +1,10 @@
+name: GoldenGolemTestSupport
+version: '${version}'
+main: dev.angelocordon.goldengolem.testsupport.TestSupportPlugin
+api-version: '26.3'
+depend: [GoldenGolem]
+description: Smoke-test only. Never installed on a real server.
+commands:
+  ggtest:
+    description: Runs a Golden Golem smoke-test scenario from the console.
+    usage: /ggtest mining
