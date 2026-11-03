@@ -120,7 +120,7 @@ public final class TestSupportPlugin extends JavaPlugin {
                         result(false, "golem built but did not link to the golden chest");
                         return;
                     }
-                    golem.setTool(new ItemStack(Material.IRON_PICKAXE));
+                    golem.setTool(new ItemStack(Material.WOODEN_SHOVEL));
                     golem.setTarget(Material.STONE);
                     golem.setWorkCenter(BlockLocation.of(center));
                     // Same as a golem loaded from disk already WORKING: the handler copes without onEnter.
