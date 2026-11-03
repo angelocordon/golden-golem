@@ -2,6 +2,8 @@ package dev.angelocordon.goldengolem.testsupport;
 
 import dev.angelocordon.goldengolem.GoldenGolemPlugin;
 import dev.angelocordon.goldengolem.Keys;
+import dev.angelocordon.goldengolem.golem.GolemController;
+import dev.angelocordon.goldengolem.golem.GolemState;
 import dev.angelocordon.goldengolem.golem.GoldenGolem;
 import dev.angelocordon.goldengolem.util.BlockLocation;
 import java.lang.reflect.Proxy;
@@ -33,7 +35,7 @@ import org.bukkit.scheduler.BukkitRunnable;
  */
 public final class TestSupportPlugin extends JavaPlugin {
 
-    private static final int TIMEOUT_TICKS = 6000;
+    private static final int TIMEOUT_TICKS = 2400;
     private static final int STONE_BLOCKS = 9;
 
     @Override
@@ -123,8 +125,13 @@ public final class TestSupportPlugin extends JavaPlugin {
                     golem.setTool(new ItemStack(Material.IRON_PICKAXE));
                     golem.setTarget(Material.STONE);
                     golem.setWorkCenter(BlockLocation.of(center));
-                    // Same as a golem loaded from disk already WORKING: the handler copes without onEnter.
-                    golem.entity().getPersistentDataContainer().set(Keys.STATE, PersistentDataType.STRING, "WORKING");
+                    GolemController controller = golden.controller();
+                    if (controller == null) {
+                        cancel();
+                        result(false, "GoldenGolem controller not available");
+                        return;
+                    }
+                    controller.transition(golem, GolemState.WORKING);
                     getLogger().info("GGTEST golem equipped, working");
                     equipped = true;
                     tick = 0;
@@ -138,6 +145,10 @@ public final class TestSupportPlugin extends JavaPlugin {
                 if (cobble == STONE_BLOCKS && stone == 0) {
                     cancel();
                     result(true, cobble + " cobblestone in the golden chest after " + tick + " ticks");
+                } else if (cobble > STONE_BLOCKS) {
+                    cancel();
+                    result(false, "drops were duplicated: " + cobble + " cobblestone in chest from "
+                            + STONE_BLOCKS + " stone blocks");
                 } else if (tick >= TIMEOUT_TICKS) {
                     cancel();
                     result(false, "after " + tick + " ticks: " + cobble + "/" + STONE_BLOCKS

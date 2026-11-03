@@ -36,9 +36,13 @@ import org.jspecify.annotations.Nullable;
 public final class GoldenGolemPlugin extends JavaPlugin {
 
     private @Nullable GolemMenuListener menus;
+    private @Nullable GolemController controller;
     private volatile Function<UUID, @Nullable Player> playerLookup = id -> getServer().getPlayer(id);
 
-    /** The online player with this id, or null. Golems go through here to find their owner. */
+    /**
+     * The online player with this id, or null. Only {@code WorkingHandler} finds its owner through
+     * here so far; {@code Feedback} and {@code FollowingHandler} still look players up themselves.
+     */
     public @Nullable Player onlinePlayer(UUID id) {
         return playerLookup.apply(id);
     }
@@ -51,6 +55,11 @@ public final class GoldenGolemPlugin extends JavaPlugin {
         playerLookup = lookup;
     }
 
+    /** The golem controller, for the smoke-test support plugin; null before the plugin is enabled. */
+    public @Nullable GolemController controller() {
+        return controller;
+    }
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
@@ -60,6 +69,7 @@ public final class GoldenGolemPlugin extends JavaPlugin {
         registry.onGolemLoaded(AiTakeover::apply);
         Movers movers = new Movers(PathMover::new);
         GolemController controller = new GolemController(getLogger(), registry, movers);
+        this.controller = controller;
         GoldenChests chests = new GoldenChests(this);
         Feedback feedback = new Feedback(this);
         ChestLinker linker = new ChestLinker(registry, chests, feedback);
