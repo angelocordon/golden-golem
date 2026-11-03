@@ -432,7 +432,7 @@ public final class WorkingHandler implements StateHandler {
         if (ownerId == null) {
             return null;
         }
-        Player owner = services.plugin().getServer().getPlayer(ownerId);
+        Player owner = services.plugin().onlinePlayer(ownerId);
         return owner != null && owner.isOnline() ? owner : null;
     }
 

@@ -22,6 +22,9 @@ import dev.angelocordon.goldengolem.lifecycle.GolemLifecycleListener;
 import dev.angelocordon.goldengolem.link.ChestLinkListener;
 import dev.angelocordon.goldengolem.link.ChestLinker;
 import dev.angelocordon.goldengolem.menu.GolemMenuListener;
+import java.util.UUID;
+import java.util.function.Function;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jspecify.annotations.Nullable;
@@ -33,6 +36,29 @@ import org.jspecify.annotations.Nullable;
 public final class GoldenGolemPlugin extends JavaPlugin {
 
     private @Nullable GolemMenuListener menus;
+    private @Nullable GolemController controller;
+    private volatile Function<UUID, @Nullable Player> playerLookup = id -> getServer().getPlayer(id);
+
+    /**
+     * The online player with this id, or null. Only {@code WorkingHandler} finds its owner through
+     * here so far; {@code Feedback} and {@code FollowingHandler} still look players up themselves.
+     */
+    public @Nullable Player onlinePlayer(UUID id) {
+        return playerLookup.apply(id);
+    }
+
+    /**
+     * Replaces how golems find their owner. Only the smoke-test support plugin calls this, to
+     * stand in a player on a server nobody can join.
+     */
+    public void overridePlayerLookup(Function<UUID, @Nullable Player> lookup) {
+        playerLookup = lookup;
+    }
+
+    /** The golem controller, for the smoke-test support plugin; null before the plugin is enabled. */
+    public @Nullable GolemController controller() {
+        return controller;
+    }
 
     @Override
     public void onEnable() {
@@ -43,6 +69,7 @@ public final class GoldenGolemPlugin extends JavaPlugin {
         registry.onGolemLoaded(AiTakeover::apply);
         Movers movers = new Movers(PathMover::new);
         GolemController controller = new GolemController(getLogger(), registry, movers);
+        this.controller = controller;
         GoldenChests chests = new GoldenChests(this);
         Feedback feedback = new Feedback(this);
         ChestLinker linker = new ChestLinker(registry, chests, feedback);
